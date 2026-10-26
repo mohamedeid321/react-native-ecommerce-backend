@@ -1,5 +1,6 @@
 import express from "express";
 import cors from "cors";
+import mongoose from "mongoose";
 import "dotenv/config";
 
 import authRoutes from "./routes/authRoutes.js";
@@ -13,10 +14,20 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 app.use(cors());
 
+app.use(async (req, res, next) => {
+  try {
+    if (mongoose.connection.readyState !== 1) {
+      await connectDB();
+    }
+    next();
+  } catch (error) {
+    console.error("DB connection error:", error);
+    res.status(500).json({ message: "Database connection failed" });
+  }
+});
+
 app.use("/api/auth", authRoutes);
 app.use("/api/products", productRoutes);
-
-connectDB();
 
 if (process.env.VERCEL !== "1") {
   app.listen(PORT, () => {
