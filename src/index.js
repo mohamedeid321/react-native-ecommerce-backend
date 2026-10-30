@@ -5,6 +5,7 @@ import "dotenv/config";
 
 import authRoutes from "./routes/authRoutes.js";
 import productRoutes from "./routes/productRoutes.js";
+import cartRoutes from "./routes/cart.route.js";
 
 import { connectDB } from "./lib/db.js";
 
@@ -28,6 +29,7 @@ app.use(async (req, res, next) => {
 
 app.use("/api/auth", authRoutes);
 app.use("/api/products", productRoutes);
+app.use("/api/cart", cartRoutes);
 
 if (process.env.VERCEL !== "1") {
   app.listen(PORT, () => {

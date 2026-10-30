@@ -5,22 +5,39 @@ const userSchema = new mongoose.Schema(
   {
     username: {
       type: String,
-      required: true,
+      required: [true, "username is required"],
       unique: true,
     },
     email: {
       type: String,
-      required: true,
+      required: [true, "email is required"],
       unique: true,
     },
     password: {
       type: String,
-      required: true,
+      required: [true, "password is required"],
       minlength: 6,
     },
     profileImage: {
       type: String,
       default: "",
+    },
+    cartItems: [
+      {
+        quantity: {
+          type: Number,
+          default: 1,
+        },
+        product: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Product",
+        },
+      },
+    ],
+    role: {
+      type: String,
+      enum: ["customer", "admin"],
+      default: "customer",
     },
   },
   { timestamps: true },

@@ -27,6 +27,32 @@ const productSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    discount: {
+      type: Number,
+      min: 0,
+      max: 100,
+      default: 0, // نسبة الخصم %
+    },
+    unit: {
+      type: String,
+      default: "", // كجم، قطعة، علبة...
+    },
+    stock: {
+      type: Number,
+      min: 0,
+      default: 0,
+    },
+    rating: {
+      type: Number,
+      min: 0,
+      max: 5,
+      default: 0,
+    },
+    reviewsCount: {
+      type: Number,
+      min: 0,
+      default: 0,
+    },
   },
   { timestamps: true },
 );

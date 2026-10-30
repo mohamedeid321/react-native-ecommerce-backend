@@ -59,6 +59,7 @@ export const signup = async (req, res) => {
         username: user.username,
         email: user.email,
         profileImage: user.profileImage,
+        role: user.role,
         createdAt: user.createdAt,
       },
     });
@@ -93,6 +94,7 @@ export const login = async (req, res) => {
         username: user.username,
         email: user.email,
         profileImage: user.profileImage,
+        role: user.role,
         createdAt: user.createdAt,
       },
     });

@@ -1,7 +1,7 @@
 import Product from "../models/product.model.js";
 import cloudinary from "../lib/cloudinary.js";
 import streamifier from "streamifier";
-
+import mongoose from "mongoose";
 //
 // دالة مساعدة لرفع الـ Buffer كـ Stream إلى Cloudinary
 const streamUpload = (req) => {
@@ -24,7 +24,8 @@ const streamUpload = (req) => {
 //
 export const createProduct = async (req, res) => {
   try {
-    const { name, description, price, category } = req.body;
+    const { name, description, price, category, discount, unit, stock } =
+      req.body;
 
     // 1 checking from all data exists
     if (!name || !description || !price || !category) {
@@ -44,11 +45,14 @@ export const createProduct = async (req, res) => {
     const uploadResponse = await streamUpload(req);
 
     // 5. create and store the product in our database
-    const newProduct = await Product.create({
+    await Product.create({
       name,
       description,
       price,
       category,
+      discount,
+      unit,
+      stock,
       image: uploadResponse.secure_url,
     });
 
@@ -103,5 +107,176 @@ export const getAllProducts = async (req, res) => {
       message: "Server error",
       error: error.message,
     });
+  }
+};
+
+export const getProductsByCategory = async (req, res) => {
+  const { category } = req.params;
+  try {
+    const products = await Product.find({ category });
+    res.json({ products });
+  } catch (error) {
+    console.log("Error in getProductsByCategory controller", error.message);
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
+export const getRecommendedProducts = async (req, res) => {
+  try {
+    const products = await Product.aggregate([
+      {
+        $sample: { size: 4 },
+      },
+      {
+        $project: {
+          _id: 1,
+          name: 1,
+          description: 1,
+          image: 1,
+          price: 1,
+        },
+      },
+    ]);
+
+    res.json(products);
+  } catch (error) {
+    console.log("Error in getRecommendedProducts controller", error.message);
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
+export const deleteProduct = async (req, res) => {
+  try {
+    const product = await Product.findById(req.params.id);
+
+    if (!product) {
+      return res.status(404).json({ message: "Product not found" });
+    }
+
+    if (product.image) {
+      const publicId = product.image.split("/").pop().split(".")[0];
+      try {
+        await deleteCloudinaryImage(product.image);
+        console.log("deleted image from cloduinary");
+      } catch (error) {
+        console.log("error deleting image from cloduinary", error);
+      }
+    }
+
+    await Product.findByIdAndDelete(req.params.id);
+
+    res.json({ message: "Product deleted successfully" });
+  } catch (error) {
+    console.log("Error in deleteProduct controller", error.message);
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
+export const toggleFeaturedProduct = async (req, res) => {
+  try {
+    const product = await Product.findById(req.params.id);
+    if (product) {
+      product.isFeatured = !product.isFeatured;
+      const updatedProduct = await product.save();
+      await updateFeaturedProductsCache();
+      res.json(updatedProduct);
+    } else {
+      res.status(404).json({ message: "Product not found" });
+    }
+  } catch (error) {
+    console.log("Error in toggleFeaturedProduct controller", error.message);
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
+async function updateFeaturedProductsCache() {
+  try {
+    // The lean() method  is used to return plain JavaScript objects instead of full Mongoose documents. This can significantly improve performance
+
+    const featuredProducts = await Product.find({ isFeatured: true }).lean();
+    await redis.set("featured_products", JSON.stringify(featuredProducts));
+  } catch (error) {
+    console.log("error in update cache function");
+  }
+}
+
+// دالة مساعدة: مسح صورة من Cloudinary بالـ URL
+const deleteCloudinaryImage = async (url) => {
+  if (!url) return;
+  try {
+    const publicId = url.split("/").pop().split(".")[0];
+    await cloudinary.uploader.destroy(`products/${publicId}`);
+  } catch (error) {
+    console.log("error deleting image from cloudinary", error.message);
+  }
+};
+
+export const getProductById = async (req, res) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Product not found" });
+    }
+    const product = await Product.findById(req.params.id);
+    if (!product) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Product not found" });
+    }
+    res.json({ success: true, product });
+  } catch (error) {
+    res
+      .status(500)
+      .json({ success: false, message: "Server error", error: error.message });
+  }
+};
+
+export const updateProduct = async (req, res) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Product not found" });
+    }
+    const product = await Product.findById(req.params.id);
+    if (!product) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Product not found" });
+    }
+
+    // الحقول المسموح تتعدل فقط (مش بنثق في أي حاجة تانية جاية من الـ body)
+    const allowed = [
+      "name",
+      "description",
+      "price",
+      "category",
+      "discount",
+      "unit",
+      "stock",
+    ];
+    allowed.forEach((key) => {
+      if (req.body[key] !== undefined) product[key] = req.body[key];
+    });
+
+    // صورة جديدة اختيارية: نرفعها ونمسح القديمة
+    if (req.file) {
+      const uploadResponse = await streamUpload(req);
+      await deleteCloudinaryImage(product.image);
+      product.image = uploadResponse.secure_url;
+    }
+
+    const updated = await product.save();
+    res.json({
+      success: true,
+      message: "Product updated successfully",
+      product: updated,
+    });
+  } catch (error) {
+    console.error("Error in updateProduct controller:", error);
+    res
+      .status(500)
+      .json({ success: false, message: "Server error", error: error.message });
   }
 };
