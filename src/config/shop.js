@@ -21,3 +21,11 @@ export const ADMIN_TRANSITIONS = {
 };
 // العميل يقدر يلغي بس قبل "خرج للتوصيل"
 export const CUSTOMER_CANCELLABLE = ["placed", "preparing"];
+
+// نصوص الإشعارات اللي بتتبعت للعميل لما الـ admin يغيّر حالة طلبه
+export const CUSTOMER_STATUS_MESSAGES = {
+  preparing: { title: "جاري تجهيز طلبك", body: "بدأنا في تجهيز طلبك رقم #{n}" },
+  out_for_delivery: { title: "طلبك خرج للتوصيل", body: "طلبك رقم #{n} في الطريق إليك" },
+  delivered: { title: "تم تسليم طلبك", body: "تم تسليم طلبك رقم #{n} بنجاح، بالهنا والشفا" },
+  cancelled: { title: "تم إلغاء طلبك", body: "تم إلغاء طلبك رقم #{n}" },
+};

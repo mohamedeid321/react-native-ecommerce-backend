@@ -11,6 +11,7 @@ import {
   getRecommendedProducts,
   getProductsByCategory,
 } from "../controllers/product.controller.js";
+import { searchProducts } from "../controllers/search.controller.js";
 
 const router = express.Router();
 
@@ -32,6 +33,7 @@ const productImages = upload.fields([
 
 // ---------- عام (guest يقدر يشوفها) ----------
 router.get("/", getAllProducts);
+router.get("/search", searchProducts); // لازم قبل "/:id"
 router.get("/recommendations", getRecommendedProducts);
 router.get("/category/:category", getProductsByCategory);
 router.get("/:id", getProductById); // لازم بعد الـ routes اللي فوقها

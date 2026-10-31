@@ -7,9 +7,11 @@ import authRoutes from "./routes/authRoutes.js";
 import productRoutes from "./routes/productRoutes.js";
 import cartRoutes from "./routes/cartRoutes.js";
 
-import orderRoutes from "./routes/orderRoutes";
+import orderRoutes from "./routes/orderRoutes.js";
 import wishlistRoutes from "./routes/wishlistRoutes.js";
 import deliveryInfoRoutes from "./routes/deliveryInfoRoutes.js";
+import statsRoutes from "./routes/statsRoutes.js";
+import notificationRoutes from "./routes/notificationRoutes.js";
 
 import { connectDB } from "./lib/db.js";
 
@@ -38,6 +40,8 @@ app.use("/api/cart", cartRoutes);
 app.use("/api/wishlist", wishlistRoutes);
 app.use("/api/delivery-info", deliveryInfoRoutes);
 app.use("/api/orders", orderRoutes);
+app.use("/api/stats", statsRoutes);
+app.use("/api/notifications", notificationRoutes);
 
 if (process.env.VERCEL !== "1") {
   app.listen(PORT, () => {

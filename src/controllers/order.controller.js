@@ -3,8 +3,10 @@ import Product from "../models/product.model.js";
 import DeliveryInfo from "../models/deliveryInfo.model.js";
 import Order from "../models/order.model.js";
 import Counter from "../models/counter.model.js";
+import { notifyAdmins, notifyUser } from "../utils/notify.js";
 import {
   ADMIN_TRANSITIONS,
+  CUSTOMER_STATUS_MESSAGES,
   CURRENT_STATUSES,
   CUSTOMER_CANCELLABLE,
   FINISHED_STATUSES,
@@ -97,6 +99,13 @@ export const createOrder = async (req, res) => {
     cart.items = [];
     await cart.save();
 
+    // إشعار للـ admin بطلب جديد (مش بيوقّف الطلب لو فشل)
+    await notifyAdmins({
+      title: "طلب جديد",
+      body: `طلب #${order.orderNumber} من ${req.user.username || "عميل"} بقيمة ${order.total} ج.م`,
+      orderId: order._id,
+    });
+
     res.status(201).json({ success: true, message: "تم استلام طلبك", order });
   } catch (error) {
     await restock(decremented).catch(() => {});
@@ -165,6 +174,11 @@ export const cancelOrder = async (req, res) => {
     if (!(await transition(order, "cancelled", "customer"))) {
       return fail(res, 409, "حالة الطلب اتغيرت، حدّث الصفحة");
     }
+    await notifyAdmins({
+      title: "تم إلغاء طلب",
+      body: `العميل ألغى الطلب #${order.orderNumber}`,
+      orderId: order._id,
+    });
     res.json({ success: true, message: "تم إلغاء الطلب", order: await Order.findById(id) });
   } catch (error) {
     serverError(res, error, "cancelOrder");
@@ -204,6 +218,14 @@ export const updateOrderStatus = async (req, res) => {
     }
     if (!(await transition(order, next, "admin"))) {
       return fail(res, 409, "حالة الطلب اتغيرت، حدّث الصفحة");
+    }
+    const msg = CUSTOMER_STATUS_MESSAGES[next];
+    if (msg) {
+      await notifyUser(order.user, {
+        title: msg.title,
+        body: msg.body.replace("#{n}", `#${order.orderNumber}`),
+        orderId: order._id,
+      });
     }
     res.json({ success: true, message: "تم تحديث حالة الطلب", order: await Order.findById(id) });
   } catch (error) {
