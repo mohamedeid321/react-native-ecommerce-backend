@@ -1,80 +1,135 @@
+import Cart from "../models/cart.model.js";
 import Product from "../models/product.model.js";
+import { MAX_QTY } from "../config/shop.js";
+import { computeTotals, round2, unitPriceOf } from "../utils/pricing.js";
+import { fail, isValidId, serverError } from "../utils/http.js";
 
-export const getCartProducts = async (req, res) => {
-	try {
-		const products = await Product.find({ _id: { $in: req.user.cartItems } });
+const getCartDoc = async (userId) =>
+  (await Cart.findOne({ user: userId })) || new Cart({ user: userId, items: [] });
 
-		// add quantity for each product
-		const cartItems = products.map((product) => {
-			const item = req.user.cartItems.find((cartItem) => cartItem.id === product.id);
-			return { ...product.toJSON(), quantity: item.quantity };
-		});
+// بيبني رد السلة: المنتجات بتفاصيلها + الإجماليات
+// المنتجات اللي اتمسحت من المتجر بتتشال من السلة تلقائياً
+const buildCartResponse = async (cart) => {
+  const ids = cart.items.map((i) => i.product);
+  const products = ids.length ? await Product.find({ _id: { $in: ids } }) : [];
+  const byId = new Map(products.map((p) => [String(p._id), p]));
 
-		res.json(cartItems);
-	} catch (error) {
-		console.log("Error in getCartProducts controller", error.message);
-		res.status(500).json({ message: "Server error", error: error.message });
-	}
+  const live = cart.items.filter((i) => byId.has(String(i.product)));
+  if (live.length !== cart.items.length) {
+    cart.items = live;
+    await cart.save();
+  }
+
+  const items = live.map((i) => {
+    const p = byId.get(String(i.product));
+    const unitPrice = unitPriceOf(p);
+    return {
+      product: String(p._id),
+      name: p.name,
+      image: p.image,
+      unit: p.unit,
+      category: p.category,
+      price: p.price,
+      discount: p.discount || 0,
+      unitPrice,
+      stock: p.stock,
+      quantity: i.quantity,
+      lineTotal: round2(unitPrice * i.quantity),
+    };
+  });
+
+  return { items, count: items.length, ...computeTotals(items) };
 };
 
+const parseQuantity = (value) => {
+  const q = Number(value);
+  return Number.isInteger(q) && q >= 1 ? Math.min(q, MAX_QTY) : null;
+};
+
+export const getCart = async (req, res) => {
+  try {
+    res.json({ success: true, cart: await buildCartResponse(await getCartDoc(req.user._id)) });
+  } catch (error) {
+    serverError(res, error, "getCart");
+  }
+};
+
+// إضافة منتج: لو موجود بنزود على كميته
 export const addToCart = async (req, res) => {
-	try {
-		const { productId } = req.body;
-		const user = req.user;
+  try {
+    const { productId } = req.body;
+    const quantity = parseQuantity(req.body.quantity ?? 1);
+    if (!isValidId(productId)) return fail(res, 404, "المنتج غير موجود");
+    if (!quantity) return fail(res, 400, "الكمية غير صحيحة");
 
-		const existingItem = user.cartItems.find((item) => item.id === productId);
-		if (existingItem) {
-			existingItem.quantity += 1;
-		} else {
-			user.cartItems.push(productId);
-		}
+    const product = await Product.findById(productId);
+    if (!product) return fail(res, 404, "المنتج غير موجود");
+    if (product.stock < 1) return fail(res, 400, "المنتج غير متوفر حالياً");
 
-		await user.save();
-		res.json(user.cartItems);
-	} catch (error) {
-		console.log("Error in addToCart controller", error.message);
-		res.status(500).json({ message: "Server error", error: error.message });
-	}
+    const cart = await getCartDoc(req.user._id);
+    const existing = cart.items.find((i) => String(i.product) === String(product._id));
+    const nextQty = Math.min((existing?.quantity || 0) + quantity, MAX_QTY);
+
+    if (nextQty > product.stock) {
+      return fail(res, 400, `المتاح من "${product.name}" ${product.stock} ${product.unit || ""} فقط`);
+    }
+
+    if (existing) existing.quantity = nextQty;
+    else cart.items.push({ product: product._id, quantity: nextQty });
+    await cart.save();
+
+    res.status(201).json({
+      success: true,
+      message: "تمت الإضافة إلى السلة",
+      cart: await buildCartResponse(cart),
+    });
+  } catch (error) {
+    serverError(res, error, "addToCart");
+  }
 };
 
-export const removeAllFromCart = async (req, res) => {
-	try {
-		const { productId } = req.body;
-		const user = req.user;
-		if (!productId) {
-			user.cartItems = [];
-		} else {
-			user.cartItems = user.cartItems.filter((item) => item.id !== productId);
-		}
-		await user.save();
-		res.json(user.cartItems);
-	} catch (error) {
-		res.status(500).json({ message: "Server error", error: error.message });
-	}
+// تعديل الكمية (بتتحط كما هي، مش بتتجمع)
+export const updateCartItem = async (req, res) => {
+  try {
+    const { productId } = req.params;
+    const quantity = parseQuantity(req.body.quantity);
+    if (!quantity) return fail(res, 400, "الكمية غير صحيحة");
+
+    const cart = await getCartDoc(req.user._id);
+    const item = cart.items.find((i) => String(i.product) === String(productId));
+    if (!item) return fail(res, 404, "المنتج غير موجود في السلة");
+
+    const product = await Product.findById(productId);
+    if (product && quantity > product.stock) {
+      return fail(res, 400, `المتاح من "${product.name}" ${product.stock} ${product.unit || ""} فقط`);
+    }
+
+    item.quantity = quantity;
+    await cart.save();
+    res.json({ success: true, cart: await buildCartResponse(cart) });
+  } catch (error) {
+    serverError(res, error, "updateCartItem");
+  }
 };
 
-export const updateQuantity = async (req, res) => {
-	try {
-		const { id: productId } = req.params;
-		const { quantity } = req.body;
-		const user = req.user;
-		const existingItem = user.cartItems.find((item) => item.id === productId);
+export const removeFromCart = async (req, res) => {
+  try {
+    const cart = await getCartDoc(req.user._id);
+    cart.items = cart.items.filter((i) => String(i.product) !== String(req.params.productId));
+    await cart.save();
+    res.json({ success: true, cart: await buildCartResponse(cart) });
+  } catch (error) {
+    serverError(res, error, "removeFromCart");
+  }
+};
 
-		if (existingItem) {
-			if (quantity === 0) {
-				user.cartItems = user.cartItems.filter((item) => item.id !== productId);
-				await user.save();
-				return res.json(user.cartItems);
-			}
-
-			existingItem.quantity = quantity;
-			await user.save();
-			res.json(user.cartItems);
-		} else {
-			res.status(404).json({ message: "Product not found" });
-		}
-	} catch (error) {
-		console.log("Error in updateQuantity controller", error.message);
-		res.status(500).json({ message: "Server error", error: error.message });
-	}
+export const clearCart = async (req, res) => {
+  try {
+    const cart = await getCartDoc(req.user._id);
+    cart.items = [];
+    await cart.save();
+    res.json({ success: true, cart: await buildCartResponse(cart) });
+  } catch (error) {
+    serverError(res, error, "clearCart");
+  }
 };

@@ -1,0 +1,47 @@
+import mongoose from "mongoose";
+import { ORDER_STATUSES } from "../config/shop.js";
+
+// الطلب بيحفظ نسخة (snapshot) من المنتجات والأسعار وقت الطلب
+// عشان لو المنتج اتعدل أو اتمسح الفاتورة القديمة تفضل زي ما هي
+const orderSchema = new mongoose.Schema(
+  {
+    orderNumber: { type: Number, required: true, unique: true },
+    user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true, index: true },
+    items: [
+      {
+        _id: false,
+        product: { type: mongoose.Schema.Types.ObjectId, ref: "Product" },
+        name: { type: String, required: true },
+        image: { type: String, default: "" },
+        unit: { type: String, default: "" },
+        unitPrice: { type: Number, required: true }, // بعد الخصم وقت الطلب
+        quantity: { type: Number, required: true, min: 1 },
+        lineTotal: { type: Number, required: true },
+      },
+    ],
+    subtotal: { type: Number, required: true },
+    deliveryFee: { type: Number, required: true },
+    total: { type: Number, required: true },
+    delivery: {
+      city: String,
+      governorate: String,
+      neighborhood: Number,
+      building: String,
+      apartment: String,
+      floor: String,
+      street: String,
+      landmark: String,
+      phone1: String,
+      phone2: String,
+    },
+    customer: { username: String, email: String }, // للعرض عند الـ admin
+    status: { type: String, enum: ORDER_STATUSES, default: "placed", index: true },
+    statusHistory: [{ _id: false, status: String, at: { type: Date, default: Date.now } }],
+    cancelledBy: { type: String, enum: ["customer", "admin", ""], default: "" },
+  },
+  { timestamps: true },
+);
+
+orderSchema.index({ createdAt: -1 });
+
+export default mongoose.models.Order || mongoose.model("Order", orderSchema);

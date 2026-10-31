@@ -5,7 +5,11 @@ import "dotenv/config";
 
 import authRoutes from "./routes/authRoutes.js";
 import productRoutes from "./routes/productRoutes.js";
-import cartRoutes from "./routes/cart.route.js";
+import cartRoutes from "./routes/cartRoutes.js";
+
+import orderRoutes from "./routes/orderRoutes";
+import wishlistRoutes from "./routes/wishlistRoutes.js";
+import deliveryInfoRoutes from "./routes/deliveryInfoRoutes.js";
 
 import { connectDB } from "./lib/db.js";
 
@@ -29,7 +33,11 @@ app.use(async (req, res, next) => {
 
 app.use("/api/auth", authRoutes);
 app.use("/api/products", productRoutes);
+//
 app.use("/api/cart", cartRoutes);
+app.use("/api/wishlist", wishlistRoutes);
+app.use("/api/delivery-info", deliveryInfoRoutes);
+app.use("/api/orders", orderRoutes);
 
 if (process.env.VERCEL !== "1") {
   app.listen(PORT, () => {
