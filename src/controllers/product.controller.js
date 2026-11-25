@@ -45,9 +45,9 @@ const validateFields = ({ price, discount, stock, category }) => {
   }
   if (
     stock !== undefined &&
-    !(Number.isInteger(stock) && stock >= 0)
+    !(Number.isFinite(stock) && stock >= 0)
   ) {
-    return "المخزون لازم يكون رقم صحيح من صفر فأكتر";
+    return "المخزون لازم يكون رقم من صفر فأكتر";
   }
   if (category !== undefined && !CATEGORY_IDS.includes(category)) {
     return "القسم غير صحيح";
@@ -66,7 +66,7 @@ const sendError = (res, error, label) => {
   console.error(`Error in ${label} controller:`, error);
   return res
     .status(500)
-    .json({ success: false, message: "Server error", error: error.message });
+    .json({ success: false, message: "Server error" });
 };
 
 // ---------- الـ controllers ----------
@@ -92,6 +92,8 @@ export const createProduct = async (req, res) => {
     }
 
     // 2. القيم صحيحة
+    const purchasePrice = parseNumber(req.body.purchasePrice);
+    if (purchasePrice !== undefined && (!Number.isFinite(purchasePrice) || purchasePrice < 0)) return res.status(400).json({message:'Invalid purchase price'});
     const invalid = validateFields({ price, discount, stock, category });
     if (invalid) {
       return res.status(400).json({ success: false, message: invalid });
@@ -124,6 +126,7 @@ export const createProduct = async (req, res) => {
       category,
       unit,
       stock,
+      purchasePrice,
       image: imageUpload.secure_url,
       detailImage: detailImageUrl,
     });
@@ -143,10 +146,10 @@ export const getAllProducts = async (req, res) => {
   try {
     const { category } = req.query;
     const page = Math.max(parseInt(req.query.page) || 1, 1);
-    const limit = Math.min(parseInt(req.query.limit) || 6, 50); // حد أقصى 50
+    const limit = Math.min(Math.max(parseInt(req.query.limit) || 6, 1), 50); // حد أقصى 50
 
     // بناء كائن البحث (Query Filter)
-    const filter = {};
+    const filter = { isActive: { $ne: false } };
     if (category && category !== "all") {
       filter.category = category;
     }
@@ -173,7 +176,6 @@ export const getAllProducts = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Server error",
-      error: error.message,
     });
   }
 };
@@ -181,17 +183,18 @@ export const getAllProducts = async (req, res) => {
 export const getProductsByCategory = async (req, res) => {
   const { category } = req.params;
   try {
-    const products = await Product.find({ category });
+    const products = await Product.find({ category, isActive: { $ne: false } });
     res.json({ products });
   } catch (error) {
     console.log("Error in getProductsByCategory controller", error.message);
-    res.status(500).json({ message: "Server error", error: error.message });
+    res.status(500).json({ message: "Server error" });
   }
 };
 
 export const getRecommendedProducts = async (req, res) => {
   try {
     const products = await Product.aggregate([
+      { $match: { isActive: { $ne: false } } },
       { $sample: { size: 4 } },
       {
         $project: {
@@ -226,7 +229,7 @@ export const getRecommendedProducts = async (req, res) => {
     res.json(products);
   } catch (error) {
     console.log("Error in getRecommendedProducts controller", error.message);
-    res.status(500).json({ message: "Server error", error: error.message });
+    res.status(500).json({ message: "Server error" });
   }
 };
 
@@ -237,7 +240,7 @@ export const getProductById = async (req, res) => {
         .status(404)
         .json({ success: false, message: "Product not found" });
     }
-    const product = await Product.findById(req.params.id);
+    const product = await Product.findOne({ _id: req.params.id, isActive: { $ne: false } });
     if (!product) {
       return res
         .status(404)
@@ -247,7 +250,7 @@ export const getProductById = async (req, res) => {
   } catch (error) {
     res
       .status(500)
-      .json({ success: false, message: "Server error", error: error.message });
+      .json({ success: false, message: "Server error" });
   }
 };
 
@@ -275,8 +278,10 @@ export const updateProduct = async (req, res) => {
       price: parseNumber(req.body.price),
       discount: parseNumber(req.body.discount),
       stock: parseNumber(req.body.stock),
+      purchasePrice: parseNumber(req.body.purchasePrice),
     };
 
+    if (fields.purchasePrice !== undefined && (!Number.isFinite(fields.purchasePrice) || fields.purchasePrice < 0)) return res.status(400).json({message:'Invalid purchase price'});
     const invalid = validateFields(fields);
     if (invalid) {
       return res.status(400).json({ success: false, message: invalid });
@@ -329,15 +334,13 @@ export const deleteProduct = async (req, res) => {
       return res.status(404).json({ message: "Product not found" });
     }
 
-    await deleteCloudinaryImage(product.image);
-    await deleteCloudinaryImage(product.detailImage);
-
-    await Product.findByIdAndDelete(req.params.id);
+    product.isActive = false;
+    await product.save();
 
     res.json({ message: "Product deleted successfully" });
   } catch (error) {
     console.log("Error in deleteProduct controller", error.message);
-    res.status(500).json({ message: "Server error", error: error.message });
+    res.status(500).json({ message: "Server error" });
   }
 };
 
@@ -355,6 +358,6 @@ export const toggleFeaturedProduct = async (req, res) => {
     res.json(updatedProduct);
   } catch (error) {
     console.log("Error in toggleFeaturedProduct controller", error.message);
-    res.status(500).json({ message: "Server error", error: error.message });
+    res.status(500).json({ message: "Server error" });
   }
 };
