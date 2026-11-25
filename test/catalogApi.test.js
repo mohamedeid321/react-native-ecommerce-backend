@@ -6,6 +6,7 @@ import cloudinary from "../src/lib/cloudinary.js";
 import cartRoutes from "../src/routes/cartRoutes.js";
 import orderRoutes from "../src/routes/orderRoutes.js";
 import financeRoutes from "../src/routes/financeRoutes.js";
+import OrderCost from "../src/models/orderCost.model.js";
 import Expense from "../src/models/expense.model.js";
 import {cairoDate} from "../src/utils/financeDates.js";
 import purchaseRoutes from "../src/routes/purchaseRoutes.js";
@@ -28,7 +29,7 @@ test("catalog HTTP integration",{skip:!process.env.TEST_MONGO_URI||!process.env.
  process.env.REDIS_URL=process.env.TEST_REDIS_URL;
  process.env.JWT_ACCESS_SECRET=randomBytes(32).toString("hex");
  await mongoose.connect(process.env.TEST_MONGO_URI,{dbName:"lotta_catalog_test_"+randomBytes(8).toString("hex")});
- await Promise.all([User.init(),Product.init(),Category.init(),Order.init(),Cart.init(),Purchase.init(),Expense.init()]);
+ await Promise.all([User.init(),Product.init(),Category.init(),Order.init(),Cart.init(),Purchase.init(),Expense.init(),OrderCost.init()]);
  const app=express();app.use(express.json());app.use("/products",products);app.use("/categories",categories);app.use("/cart",cartRoutes);app.use("/orders",orderRoutes);app.use("/purchases",purchaseRoutes);app.use("/finance",financeRoutes);
  const server=app.listen(0);await new Promise(r=>server.once("listening",r));
  const base="http://127.0.0.1:"+server.address().port;
@@ -225,6 +226,21 @@ test("catalog HTTP integration",{skip:!process.env.TEST_MONGO_URI||!process.env.
  assert.equal(finance.totals.operatingExpenses,5);
  assert.equal(finance.totals.estimatedNetProfit,6.25);
  assert.equal(finance.inventoryCostingComplete,false);
+ assert.equal(finance.totals.provisionalCostOrders,1);
+ const freezeUrl="/finance/orders/"+order._id+"/freeze-cost";
+ assert.equal((await call(freezeUrl,"POST",{},customerCookie)).status,403);
+ assert.equal((await call("/finance/orders/"+nextOrder._id+"/freeze-cost","POST",{},adminCookie)).status,404);
+ const frozen=await call(freezeUrl,"POST",{},adminCookie);
+ assert.equal(frozen.status,201);assert.equal((await frozen.json()).snapshot.total,15.75);
+ assert.equal((await call(purchaseUrl,"PUT",{quantity:2,unitCost:30},adminCookie)).status,200);
+ const frozenReport=await (await call("/finance?range=day","GET",undefined,adminCookie)).json();
+ assert.equal(frozenReport.totals.estimatedCogs,15.75);
+ assert.equal(frozenReport.totals.frozenCostOrders,1);
+ assert.equal(frozenReport.totals.provisionalCostOrders,0);
+ assert.equal((await call(freezeUrl,"POST",{},adminCookie)).status,200);
+ assert.equal(await OrderCost.countDocuments({order:order._id}),1);
+ assert.equal("snapshot" in (await (await call(op,"GET",undefined,customerCookie)).json()).order,false);
+
  assert.equal((await call(expenseUrl+"/"+expense._id+"/void","PATCH",{},adminCookie)).status,200);
  assert.equal((await call(expenseUrl+"/"+expense._id+"/void","PATCH",{},adminCookie)).status,409);
  assert.equal((await (await call("/finance","GET",undefined,adminCookie)).json()).totals.operatingExpenses,0);
