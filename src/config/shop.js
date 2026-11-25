@@ -15,7 +15,7 @@ export const FINISHED_STATUSES = ["delivered", "cancelled"]; // الطلبات �
 export const ADMIN_TRANSITIONS = {
   placed: ["preparing", "cancelled"],
   preparing: ["out_for_delivery", "cancelled"],
-  out_for_delivery: ["delivered"],
+  out_for_delivery: [],
   delivered: [],
   cancelled: [],
 };
