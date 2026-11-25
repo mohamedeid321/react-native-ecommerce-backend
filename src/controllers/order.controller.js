@@ -54,7 +54,8 @@ export const createOrder = async (req,res) => {
    items.push({product:p._id,name:p.name,image:p.image,unit:p.unit,unitPrice,quantity,lineTotal:round2(unitPrice*quantity)});
   }
   const counter=await Counter.findOneAndUpdate({_id:"order"},{$inc:{seq:1}},{upsert:true,new:true,session});
-  const totals=computeTotals(items);
+  const firstOrder=!(await Order.exists({user:req.user._id,status:{$ne:"cancelled"}}).session(session));
+  const totals=computeTotals(items,{firstOrder});
   const delivery=Object.fromEntries(["city","governorate","neighborhood","building","apartment","floor","street","landmark","phone1","phone2"].map(k=>[k,info[k]]));
   [order]=await Order.create([{orderNumber:100000+counter.seq,user:req.user._id,items,...totals,delivery,customer:{username:req.user.username,email:req.user.email},status:"placed",statusHistory:[{status:"placed"}],checkoutKey:key,deliveryDate:scheduledDeliveryDate(),paymentMethod:"cod",paymentStatus:"pending"}],{session});
   cart.items=[];await cart.save({session});
@@ -102,17 +103,17 @@ export const getOrderById = async (req, res) => {
 };
 
 // يغيّر الحالة بشكل ذرّي (لو الحالة اتغيرت في نفس اللحظة الطلب بيفشل بدل ما يحصل تعارض)
-const transition = async (order, status, cancelledBy = "") => {
-  const result = await Order.updateOne(
-    { _id: order._id, status: order.status },
-    {
-      $set: { status, ...(status === "cancelled" ? { cancelledBy } : {}) },
-      $push: { statusHistory: { status, at: new Date() } },
-    },
-  );
-  if (!result.modifiedCount) return false;
-  if (status === "cancelled") await restock(order.items);
-  return true;
+const transition = async (order,status,cancelledBy="")=>{
+ const session=await mongoose.startSession();
+ let changed=false;
+ try{
+ await session.withTransaction(async()=>{
+  const result=await Order.updateOne({_id:order._id,status:order.status},{$set:{status,...(status==="cancelled"?{cancelledBy}:{})},$push:{statusHistory:{status,at:new Date()}}},{session});
+  changed=Boolean(result.modifiedCount);
+  if(changed&&status==="cancelled")for(const item of order.items)if(item.product)await Product.updateOne({_id:item.product},{$inc:{stock:item.quantity}},{session});
+ });
+ return changed;
+ }finally{await session.endSession();}
 };
 
 // إلغاء من العميل: قبل "الخروج للتوصيل" بس، والمخزون بيرجع
