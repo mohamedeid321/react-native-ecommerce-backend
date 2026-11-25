@@ -1,4 +1,4 @@
-import {getShopSettings} from "../models/shopSettings.model.js";
+import {getShopSettings,ShopSettings} from "../models/shopSettings.model.js";
 import Order from "../models/order.model.js";
 import Cart from "../models/cart.model.js";
 import Product from "../models/product.model.js";
@@ -11,10 +11,10 @@ const getCartDoc = async (userId) =>
 
 // بيبني رد السلة: المنتجات بتفاصيلها + الإجماليات
 // المنتجات اللي اتمسحت من المتجر بتتشال من السلة تلقائياً
-const buildCartResponse = async (cart) => {
+const buildCartResponse = async (cart, snapshot) => {
   const ids = cart.items.map((i) => i.product);
   if (!ids.length) return {items:[],count:0,subtotal:0,deliveryFee:0,total:0};
-  const [products,existingOrder,settings] = await Promise.all([
+  const [products,existingOrder,settings] = snapshot ?? await Promise.all([
     Product.find({ _id: { $in: ids }, isActive: { $ne: false } }).select("name image unit category price discount stock").lean(),
     Order.exists({user:cart.user,status:{$ne:"cancelled"}}),
     getShopSettings(),
@@ -34,12 +34,12 @@ const buildCartResponse = async (cart) => {
       product: String(p._id),
       name: p.name,
       image: p.image,
-      unit: p.unit,
+      unit: p.unit ?? "",
       category: p.category,
       price: p.price,
       discount: p.discount || 0,
       unitPrice,
-      stock: p.stock,
+      stock: p.stock ?? 0,
       quantity: i.quantity,
       lineTotal: round2(unitPrice * i.quantity),
     };
@@ -57,9 +57,19 @@ const parseQuantity = (value) => {
 
 export const getCart = async (req, res) => {
   try {
-    const cart = await Cart.findOne({user:req.user._id}).select("user items").lean();
-    if (!cart?.items.length) return res.json({success:true,cart:{items:[],count:0,subtotal:0,deliveryFee:0,total:0}});
-    res.json({ success: true, cart: await buildCartResponse(cart) });
+    // One Mongo command for the live cart view, without caching or writing customer data.
+    const [cart] = await Cart.aggregate([
+      {$match:{user:req.user._id,"items.0":{$exists:true}}},
+      {$limit:1},
+      {$project:{user:1,items:1}},
+      {$lookup:{from:Product.collection.name,localField:"items.product",foreignField:"_id",
+        pipeline:[{$match:{isActive:{$ne:false}}},{$project:{name:1,image:1,unit:1,category:1,price:1,discount:1,stock:1}}],as:"liveProducts"}},
+      {$lookup:{from:Order.collection.name,localField:"user",foreignField:"user",
+        pipeline:[{$match:{status:{$ne:"cancelled"}}},{$limit:1},{$project:{_id:1}}],as:"previousOrders"}},
+      {$lookup:{from:ShopSettings.collection.name,pipeline:[{$match:{_id:"shop"}},{$project:{deliveryFee:1,freeDeliveryThreshold:1,firstOrderFree:1}}],as:"pricingSettings"}}
+    ]);
+    if (!cart) return res.json({success:true,cart:{items:[],count:0,subtotal:0,deliveryFee:0,total:0}});
+    res.json({success:true,cart:await buildCartResponse(cart,[cart.liveProducts,cart.previousOrders[0],cart.pricingSettings[0]??{}])});
   } catch (error) {
     if (error.name === "VersionError" || error.code === 11000) return fail(res, 409, "السلة اتغيرت، حاول مرة أخرى");
     serverError(res, error, "getCart");
