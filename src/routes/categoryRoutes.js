@@ -1,3 +1,4 @@
+import {createSingleFlight} from "../utils/singleFlight.js";
 import express from "express";
 import Category from "../models/category.model.js";
 import {CATEGORY_IDS} from "../models/product.model.js";
@@ -10,7 +11,8 @@ async function list(){
  CATEGORY_IDS.forEach((slug,i)=>{if(!map.has(slug))map.set(slug,{slug,name:labels[i],isActive:true,sortOrder:i});});
  return [...map.values()].sort((a,b)=>a.sortOrder-b.sortOrder||a.slug.localeCompare(b.slug));
 }
-router.get("/",async(req,res)=>res.json({categories:(await list()).filter(c=>c.isActive)}));
+const publicFlight=createSingleFlight();
+router.get("/",async(req,res)=>res.json({categories:(await publicFlight("categories",list)).filter(c=>c.isActive)}));
 router.get("/admin",protectRoute,adminRoute,async(req,res)=>res.json({categories:await list()}));
 router.put("/:slug",protectRoute,adminRoute,async(req,res)=>{
  const {slug}=req.params;const {name,isActive,sortOrder=0}=req.body||{};
