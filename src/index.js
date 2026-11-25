@@ -10,6 +10,7 @@ import categoryRoutes from "./routes/categoryRoutes.js";
 import productRoutes from "./routes/productRoutes.js";
 import cartRoutes from "./routes/cartRoutes.js";
 
+import inventoryRoutes from "./routes/inventoryRoutes.js";
 import financeRoutes from "./routes/financeRoutes.js";
 import purchaseRoutes from "./routes/purchaseRoutes.js";
 import orderRoutes from "./routes/orderRoutes.js";
@@ -50,6 +51,7 @@ app.use("/api/delivery-info", deliveryInfoRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/purchases", purchaseRoutes);
 app.use("/api/finance", financeRoutes);
+app.use("/api/inventory", inventoryRoutes);
 app.use("/api/stats", statsRoutes);
 app.use("/api/notifications", notificationRoutes);
 
