@@ -1,3 +1,4 @@
+import {createSingleFlight} from "../utils/singleFlight.js";
 import Product, { CATEGORY_IDS } from "../models/product.model.js";
 import Category from "../models/category.model.js";
 import cloudinary from "../lib/cloudinary.js";
@@ -143,10 +144,11 @@ export const createProduct = async (req, res) => {
   }
 };
 
+const listFlight=createSingleFlight();
 export const getAllProducts = async (req, res) => {
   try {
-    const { category } = req.query;
-    const page = Math.max(parseInt(req.query.page) || 1, 1);
+    const category = typeof req.query.category==="string"?req.query.category:undefined;
+    const page = Math.min(10000,Math.max(parseInt(req.query.page) || 1, 1));
     const limit = Math.min(Math.max(parseInt(req.query.limit) || 6, 1), 50); // حد أقصى 50
 
     // بناء كائن البحث (Query Filter)
@@ -158,12 +160,11 @@ export const getAllProducts = async (req, res) => {
     const skip = (page - 1) * limit;
 
     // الأحدث أولاً مع الفلترة والـ Pagination
-    const products = await Product.find(filter)
-      .sort(req.query.sort === "price_asc" ? {price:1,_id:1} : req.query.sort === "price_desc" ? {price:-1,_id:1} : {createdAt:-1,_id:-1})
-      .skip(skip)
-      .limit(limit);
-
-    const totalProducts = await Product.countDocuments(filter);
+    const sort=req.query.sort==="price_asc"?"price_asc":req.query.sort==="price_desc"?"price_desc":"latest";
+    const [products,totalProducts]=await listFlight(JSON.stringify([category??"all",page,limit,sort]),()=>Promise.all([
+      Product.find(filter).sort(sort==="price_asc"?{price:1,_id:1}:sort==="price_desc"?{price:-1,_id:1}:{createdAt:-1,_id:-1}).skip(skip).limit(limit),
+      Product.countDocuments(filter),
+    ]));
 
     return res.status(200).json({
       success: true,
