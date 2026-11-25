@@ -11,3 +11,6 @@
 10. Settings, banners, delivery areas, notifications.
 11. OpenAPI, automated integration tests, load testing, staging and migration.
 No production deployment or main merge until review. Separate test MongoDB and Redis credentials required. Google OAuth client configuration required for end-to-end Google login.
+
+## Launch decision: phone verification
+Phone OTP is deferred by owner decision. Phone numbers are normalized and unique but unverified. Do not represent them as verified. First-order manual confirmation is recommended. Admin MFA remains required; use authenticator-app TOTP without SMS charges.
