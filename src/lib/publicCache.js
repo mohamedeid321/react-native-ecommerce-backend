@@ -23,7 +23,7 @@ export function createPublicCache({redis=getRedis,enabled=()=>process.env.PUBLIC
    if(!enabled()){metrics.bypasses++;return load();}
    const digest=createHash("sha256").update(key).digest("hex");
    // Fixed-size namespace: 64 slots. Collisions are misses, never another key's data.
-   const slot=PREFIX+ns+":slot:"+(parseInt(digest.slice(0,2),16)%64);
+   const slot=prefix()+ns+":slot:"+(parseInt(digest.slice(0,2),16)%64);
    return flight(ns+":"+digest,async()=>{
     if(now()<blockedUntil){metrics.bypasses++;return load();}
     let generation,raw;
