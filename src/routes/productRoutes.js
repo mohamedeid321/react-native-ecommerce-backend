@@ -13,7 +13,10 @@ import {
 } from "../controllers/product.controller.js";
 import { searchProducts } from "../controllers/search.controller.js";
 
+import { listAdminProducts, setProductVisibility } from "../controllers/catalogAdmin.controller.js";
 const router = express.Router();
+router.get("/admin", protectRoute, adminRoute, listAdminProducts);
+router.patch("/:id/visibility", protectRoute, adminRoute, setProductVisibility);
 
 // الحد الأقصى لكل صورة 2MB: الصورتين مع بعض لازم يفضلوا تحت حد Vercel للـ request (حوالي 4.5MB)
 const upload = multer({
