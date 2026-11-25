@@ -28,5 +28,5 @@ jobs:
         with:
           node-version: '22'
       - run: npm install --no-audit --no-fund
-      - run: find src test -name '*.js' -exec node --check {} \;
+      - run: find src test -name '*.js' -print0 | xargs -0 -n1 node --check
       - run: npm test
