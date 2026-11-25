@@ -16,8 +16,11 @@ export const protectRoute = async (req,res,next) => {
     if (!/^[a-f0-9]{24}$/i.test(decoded.userId || "")) throw new Error("Invalid claims");
   } catch { return res.status(401).json({message:"Invalid or expired token"}); }
   try {
-    if (cookie && !(await createSessionStore(getRedis()).active(decoded.sid,decoded.userId))) return res.status(401).json({message:"Session expired"});
-    const user = await User.findById(decoded.userId).select("-password");
+    const [active,user] = await Promise.all([
+      cookie ? createSessionStore(getRedis()).active(decoded.sid,decoded.userId) : true,
+      User.findById(decoded.userId).select("-password"),
+    ]);
+    if (!active) return res.status(401).json({message:"Session expired"});
     if (!user || user.disabled) return res.status(401).json({message:"Authentication required"});
     if (user.role === "admin" && (!cookie || !(await createSessionStore(getRedis()).active(decoded.sid,decoded.userId,true)))) return res.status(403).json({message:"Admin MFA web login required"});
     if (user.role === "delivery" && !cookie) return res.status(403).json({message:"Courier web login required"});
