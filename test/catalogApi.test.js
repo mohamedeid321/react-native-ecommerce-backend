@@ -30,10 +30,13 @@ import Category from "../src/models/category.model.js";
 import products from "../src/routes/productRoutes.js";
 import categories from "../src/routes/categoryRoutes.js";
 import {getRedis} from "../src/lib/redis.js";
+import {publicCache} from "../src/lib/publicCache.js";
 import {createSessionStore} from "../src/lib/sessionStore.js";
 import {signAccessToken} from "../src/utils/sessionTokens.js";
 test("catalog HTTP integration",{skip:!process.env.TEST_MONGO_URI||!process.env.TEST_REDIS_URL,timeout:60000},async()=>{
  process.env.REDIS_URL=process.env.TEST_REDIS_URL;
+ process.env.PUBLIC_CACHE_ENABLED="1";
+ process.env.PUBLIC_CACHE_NAMESPACE="test-"+randomBytes(8).toString("hex");
  process.env.JWT_ACCESS_SECRET=randomBytes(32).toString("hex");
  await mongoose.connect(process.env.TEST_MONGO_URI,{dbName:"lotta_catalog_test_"+randomBytes(8).toString("hex")});
  await Promise.all([User.init(),Product.init(),Category.init(),Order.init(),Cart.init(),Purchase.init(),Expense.init(),OrderCost.init(),InventoryMovement.init(),ShopSettings.init(),Banner.init()]);
@@ -52,6 +55,7 @@ test("catalog HTTP integration",{skip:!process.env.TEST_MONGO_URI||!process.env.
  const hidden=await Product.create({name:"Hidden",description:"Fresh",price:10,stock:5,category:"fruits",image:"https://example.com/hidden.png",isActive:false});
  const list=await (await call("/products?sort=price_asc")).json();
  assert.equal(list.totalProducts,2);assert.equal(list.products[0]._id,orange.id||String(orange._id));
+ const cachedList=await (await call("/products?sort=price_asc")).json();assert.deepEqual(cachedList,list);assert.ok(publicCache.stats().hits>=1);
  assert.equal(list.products[1].finalPrice,49.5);assert.equal(list.products[1].stock,2.5);assert.equal("purchasePrice" in list.products[1],false);
  assert.equal((await call("/products/"+hidden._id)).status,404);
  assert.equal((await call("/products/admin")).status,401);
