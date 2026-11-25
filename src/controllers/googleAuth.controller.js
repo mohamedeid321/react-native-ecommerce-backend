@@ -28,7 +28,7 @@ export async function googleLogin(req,res) {
       throw error;
     }
   }
-  if (user.role !== "customer") return res.status(403).json({message:"Google sign-in restricted to customer accounts"});
+  if (user.disabled || user.role !== "customer") return res.status(403).json({message:"Google sign-in restricted to customer accounts"});
   const session = await createSessionStore(getRedis()).create(user.id);
   setAuthCookies(res,signAccessToken(user.id,session.sessionId),session.refreshToken);
   return res.json({user:{id:user.id,username:user.username,displayName:user.displayName,email:user.email,phone:user.phone,role:user.role},profileIncomplete:!user.phone});
@@ -40,7 +40,7 @@ export async function linkGoogle(req,res) {
   if (!process.env.GOOGLE_CLIENT_ID) return res.sendStatus(503);
   if (typeof credential !== "string" || credential.length > 12000 || typeof password !== "string" || Buffer.byteLength(password)>72) return res.sendStatus(400);
   const user = await User.findById(req.user.id).select("+googleSub");
-  if (!user || !(await user.comparePassword(password))) return res.sendStatus(401);
+  if (!user || user.disabled || !(await user.comparePassword(password))) return res.sendStatus(401);
   let p;
   try { p = (await new OAuth2Client(process.env.GOOGLE_CLIENT_ID).verifyIdToken({idToken:credential,audience:process.env.GOOGLE_CLIENT_ID})).getPayload(); }
   catch { return res.sendStatus(401); }
