@@ -19,6 +19,12 @@ const orderSchema = new mongoose.Schema(
         lineTotal: { type: Number, required: true },
       },
     ],
+    courier: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    assignedAt: Date,
+    courierDeliveredAt: Date,
+    collectedAmount: { type: Number, min: 0 },
+    approvedAt: Date,
+    approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     checkoutKey: { type: String, maxlength: 128, select: false },
     deliveryDate: { type: String, match: /^\d{4}-\d{2}-\d{2}$/, index: true },
     paymentMethod: { type: String, enum: ["cod"], default: "cod" },
@@ -47,6 +53,7 @@ const orderSchema = new mongoose.Schema(
 );
 
 orderSchema.index({ createdAt: -1 });
+orderSchema.index({courier:1,deliveryDate:1,status:1});
 orderSchema.index({user:1,checkoutKey:1},{unique:true,partialFilterExpression:{checkoutKey:{$type:"string"}}});
 orderSchema.set("toJSON",{transform(doc,ret){delete ret.checkoutKey;return ret;}});
 
