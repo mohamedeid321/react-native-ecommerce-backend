@@ -6,6 +6,7 @@ import cloudinary from "../src/lib/cloudinary.js";
 import cartRoutes from "../src/routes/cartRoutes.js";
 import orderRoutes from "../src/routes/orderRoutes.js";
 import financeRoutes from "../src/routes/financeRoutes.js";
+import adminRoutes from "../src/routes/adminRoutes.js";
 import inventoryRoutes from "../src/routes/inventoryRoutes.js";
 import InventoryMovement from "../src/models/inventoryMovement.model.js";
 import OrderCost from "../src/models/orderCost.model.js";
@@ -32,7 +33,7 @@ test("catalog HTTP integration",{skip:!process.env.TEST_MONGO_URI||!process.env.
  process.env.JWT_ACCESS_SECRET=randomBytes(32).toString("hex");
  await mongoose.connect(process.env.TEST_MONGO_URI,{dbName:"lotta_catalog_test_"+randomBytes(8).toString("hex")});
  await Promise.all([User.init(),Product.init(),Category.init(),Order.init(),Cart.init(),Purchase.init(),Expense.init(),OrderCost.init(),InventoryMovement.init()]);
- const app=express();app.use(express.json());app.use("/products",products);app.use("/categories",categories);app.use("/cart",cartRoutes);app.use("/orders",orderRoutes);app.use("/purchases",purchaseRoutes);app.use("/finance",financeRoutes);app.use("/inventory",inventoryRoutes);
+ const app=express();app.use(express.json());app.use("/products",products);app.use("/categories",categories);app.use("/cart",cartRoutes);app.use("/orders",orderRoutes);app.use("/purchases",purchaseRoutes);app.use("/finance",financeRoutes);app.use("/inventory",inventoryRoutes);app.use("/admin",adminRoutes);
  const server=app.listen(0);await new Promise(r=>server.once("listening",r));
  const base="http://127.0.0.1:"+server.address().port;
  const call=(path,method="GET",body,cookie="")=>fetch(base+path,{method,headers:{"Content-Type":"application/json",Cookie:cookie},body:body===undefined?undefined:JSON.stringify(body)});
@@ -277,6 +278,34 @@ test("catalog HTTP integration",{skip:!process.env.TEST_MONGO_URI||!process.env.
  assert.equal(incomplete.totals.missingWasteCosts,1);
  assert.equal(incomplete.totals.wasteCost,null);
  assert.equal(incomplete.totals.estimatedNetProfit,null);
+ assert.equal((await call("/admin/dashboard","GET",undefined,customerCookie)).status,403);
+ assert.equal((await call("/admin/dashboard","GET",undefined,cb)).status,403);
+ assert.equal((await call("/admin/dashboard?date=2026-02-30","GET",undefined,adminCookie)).status,400);
+ const dashboard=await (await call("/admin/dashboard?date="+day,"GET",undefined,adminCookie)).json();
+ assert.equal(dashboard.scheduledOrders,3);
+ assert.equal(dashboard.byStatus.delivered,1);
+ assert.equal(dashboard.byStatus.cancelled,1);
+ assert.equal(dashboard.alerts.unassigned,1);
+ assert.equal(dashboard.customers,2);
+ assert.equal(dashboard.activeCouriers,2);
+ const todayDashboard=await (await call("/admin/dashboard?date="+today,"GET",undefined,adminCookie)).json();
+ assert.equal(todayDashboard.realizedRevenue,27);
+ assert.equal(todayDashboard.cashCollected,27);
+ assert.equal(todayDashboard.approvedDeliveries,1);
+ assert.equal((await call("/admin/customers","GET",undefined,customerCookie)).status,403);
+ const customerList=await (await call("/admin/customers?q=catalog","GET",undefined,adminCookie)).json();
+ assert.equal(customerList.count,1);
+ assert.equal(customerList.customers[0]._id,user.id);
+ assert.equal("password" in customerList.customers[0],false);
+ assert.equal("mfaSecret" in customerList.customers[0],false);
+ assert.equal((await (await call("/admin/customers?q="+encodeURIComponent(".*"),"GET",undefined,adminCookie)).json()).count,0);
+ const detail=await (await call("/admin/customers/"+user.id,"GET",undefined,adminCookie)).json();
+ assert.equal(detail.count,3);
+ assert.equal(detail.approvedOrders,1);
+ assert.equal(detail.realizedRevenue,27);
+ assert.equal(detail.phoneVerified,false);
+ assert.equal((await call("/admin/customers/"+courierA.id,"GET",undefined,adminCookie)).status,404);
+
 
 
 
