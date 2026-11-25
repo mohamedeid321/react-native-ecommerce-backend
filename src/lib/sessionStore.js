@@ -1,6 +1,7 @@
 import { newSessionId, newRefreshToken, parseRefreshToken, REFRESH_SECONDS } from "../utils/sessionTokens.js";
 
 const key = id => "lotta:auth:session:" + id;
+const generationKey = id => "lotta:auth:generation:" + id;
 const ROTATE = `
 local raw = redis.call('GET', KEYS[1])
 if not raw then return 'missing' end
@@ -12,6 +13,8 @@ if s.hash ~= ARGV[1] then
   end
   return 'invalid'
 end
+local generation = redis.call('GET', 'lotta:auth:generation:' .. s.userId) or '0'
+if (s.generation or '0') ~= generation then redis.call('DEL', KEYS[1]); return 'missing' end
 local ttl = redis.call('TTL', KEYS[1])
 if ttl <= 0 then return 'missing' end
 s.used = s.used or {}
@@ -30,7 +33,8 @@ export function createSessionStore(redis) {
       const sessionId = newSessionId();
       const refreshToken = newRefreshToken(sessionId);
       const { hash } = parseRefreshToken(refreshToken);
-      const result = await redis.set(key(sessionId), JSON.stringify({ userId: String(userId), hash }), "EX", REFRESH_SECONDS, "NX");
+      const generation = await redis.get(generationKey(userId)) || "0";
+      const result = await redis.set(key(sessionId), JSON.stringify({ userId: String(userId), hash, generation }), "EX", REFRESH_SECONDS, "NX");
       if (result !== "OK") throw new Error("Session creation failed");
       return { sessionId, refreshToken };
     },
@@ -44,8 +48,11 @@ export function createSessionStore(redis) {
     },
     async active(sessionId, userId) {
       const raw = await redis.get(key(sessionId));
-      return !!raw && JSON.parse(raw).userId === String(userId);
+      if (!raw) return false;
+      const session = JSON.parse(raw);
+      return session.userId === String(userId) && (session.generation || "0") === (await redis.get(generationKey(userId)) || "0");
     },
+    async revokeAll(userId) { await redis.incr(generationKey(userId)); },
     async revoke(sessionId) { await redis.del(key(sessionId)); }
   };
 }
