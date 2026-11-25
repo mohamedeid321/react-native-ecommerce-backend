@@ -4,6 +4,8 @@ on:
     branches: [develop/lotta-web-backend]
     paths:
       - 'performance/**'
+      - 'src/controllers/order.controller.js'
+      - 'src/utils/checkoutGate.js'
       - '.github/workflows/performance.yml'
   workflow_dispatch:
 permissions:
