@@ -12,6 +12,7 @@ import {
   CURRENT_STATUSES,
   CUSTOMER_CANCELLABLE,
   FINISHED_STATUSES,
+  ORDER_STATUSES,
 } from "../config/shop.js";
 import { computeTotals, round2, unitPriceOf } from "../utils/pricing.js";
 import { fail, isValidId, serverError } from "../utils/http.js";
@@ -146,12 +147,18 @@ export const cancelOrder = async (req, res) => {
 // scope=current (الافتراضي) | finished
 export const getAllOrders = async (req, res) => {
   try {
-    const finished = req.query.scope === "finished";
-    const statuses = finished ? FINISHED_STATUSES : CURRENT_STATUSES;
+    const {scope,status,date,overdue,courierId}=req.query;
+    if(scope!==undefined&&!["current","finished","all"].includes(scope))return fail(res,400,"Invalid scope");
+    const statuses=scope==="finished"?FINISHED_STATUSES:scope==="all"?ORDER_STATUSES:CURRENT_STATUSES;
+    const filter={status:{$in:statuses}};
+    if(status!==undefined){if(!ORDER_STATUSES.includes(status))return fail(res,400,"Invalid status");filter.status=status;}
+    if(date!==undefined){if(typeof date!=="string"||!/^\d{4}-\d{2}-\d{2}$/.test(date))return fail(res,400,"Invalid date");filter.deliveryDate=date;}
+    if(courierId!==undefined){if(typeof courierId!=="string"||!isValidId(courierId))return fail(res,400,"Invalid courier");filter.courier=courierId;}
+    if(overdue==="true"){if(status!==undefined&&!CURRENT_STATUSES.includes(status))return fail(res,400,"Invalid overdue status");filter.status=status??{$in:CURRENT_STATUSES};filter.deliveryDate={$lt:new Intl.DateTimeFormat("en-CA",{timeZone:"Africa/Cairo",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date())};}
     const { skip, limit } = pageParams(req.query);
 
     const [orders, currentCount, finishedCount] = await Promise.all([
-      Order.find({ status: { $in: statuses } }).sort({ createdAt: -1 }).skip(skip).limit(limit),
+      Order.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit),
       Order.countDocuments({ status: { $in: CURRENT_STATUSES } }),
       Order.countDocuments({ status: { $in: FINISHED_STATUSES } }),
     ]);
