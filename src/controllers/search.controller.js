@@ -1,11 +1,14 @@
+import {createSingleFlight} from "../utils/singleFlight.js";
 import Product from "../models/product.model.js";
 import { buildSearchFilter } from "../utils/search.js";
 import { serverError } from "../utils/http.js";
 
 // GET /api/products/search?q=فراوله&category=fruits&page=1&limit=10
+const searchFlight=createSingleFlight();
 export const searchProducts = async (req, res) => {
   try {
-    const filter = buildSearchFilter(req.query.q);
+    const query=typeof req.query.q==="string"?req.query.q.trim().slice(0,200):"";
+    const filter = buildSearchFilter(query);
     if (!filter) return res.json({ success: true, query: "", products: [], hasMore: false });
 
     filter.isActive = { $ne: false };
@@ -13,17 +16,14 @@ export const searchProducts = async (req, res) => {
       filter.category = String(req.query.category);
     }
 
-    const page = Math.max(parseInt(req.query.page) || 1, 1);
+    const page = Math.min(10000,Math.max(parseInt(req.query.page) || 1, 1));
     const limit = Math.min(Math.max(parseInt(req.query.limit) || 10, 1), 30);
 
-    const products = await Product.find(filter)
-      .sort({ createdAt: -1 })
-      .skip((page - 1) * limit)
-      .limit(limit);
+    const products = await searchFlight(JSON.stringify([query,filter.category??"all",page,limit]),()=>Product.find(filter).sort({createdAt:-1}).skip((page-1)*limit).limit(limit));
 
     res.json({
       success: true,
-      query: String(req.query.q).trim(),
+      query,
       products,
       hasMore: products.length === limit,
     });
