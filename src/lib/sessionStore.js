@@ -47,10 +47,10 @@ export function createSessionStore(redis) {
       return { userId: String(result), sessionId: parsed.sessionId, refreshToken };
     },
     async active(sessionId, userId, requireMfa = false) {
-      const raw = await redis.get(key(sessionId));
+      const [raw,generation] = await redis.mget(key(sessionId),generationKey(userId));
       if (!raw) return false;
       const session = JSON.parse(raw);
-      return (!requireMfa || session.mfaVerified === true) && session.userId === String(userId) && (session.generation || "0") === (await redis.get(generationKey(userId)) || "0");
+      return (!requireMfa || session.mfaVerified === true) && session.userId === String(userId) && (session.generation || "0") === (generation || "0");
     },
     async revokeAll(userId) { await redis.incr(generationKey(userId)); },
     async revoke(sessionId) { await redis.del(key(sessionId)); }
