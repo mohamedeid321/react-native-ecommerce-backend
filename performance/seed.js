@@ -26,6 +26,6 @@ try{
  await Counter.create({_id:"order",seq:100000});
  const store=createSessionStore(getRedis());
  const accounts=await Promise.all(users.map(async u=>{const s=await store.create(u.id);return {id:u.id,email:u.email,access:signAccessToken(u.id,s.sessionId)};}));
- await writeFile("performance/fixture.json",JSON.stringify({accounts,password,productId:products[0].id}),{mode:0o600});
+ await writeFile("performance/fixture.json",JSON.stringify({accounts,password,productId:String(products[0]._id)}),{mode:0o600});
  console.log("Seeded 300 products, 250 customers, checkout stock 30");
 }finally{await mongoose.disconnect();await getRedis().quit();}
