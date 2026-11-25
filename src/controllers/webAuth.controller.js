@@ -34,7 +34,7 @@ export async function webLogin(req,res) {
   if (typeof loginId !== "string" || typeof password !== "string" || loginId.length > 254 || Buffer.byteLength(password) > 72) return res.status(400).json({message:"Invalid credentials"});
   const normalized = normalizePhone(loginId);
   const user = await User.findOne(normalized ? {phone:normalized} : {email:loginId.trim().toLowerCase()}).select("+mfaSecret");
-  if (!user || !(await user.comparePassword(password))) return res.status(401).json({message:"Invalid credentials"});
+  if (!user || user.disabled || !(await user.comparePassword(password))) return res.status(401).json({message:"Invalid credentials"});
   if (user.role === "admin") {
     if (!user.mfaSecret) return res.status(403).json({message:"Admin MFA enrollment required"});
     if (!(await checkAdminCode(user,req.body.code))) return res.status(401).json({message:"MFA code required or invalid"});
@@ -47,7 +47,7 @@ export async function webRefresh(req,res) {
   const session = await store().rotate(readCookie(req,"lotta_refresh"));
   if (!session) { clearAuthCookies(res); return res.status(401).json({message:"Session expired"}); }
   const user = await User.findById(session.userId);
-  if (!user || (user.role === "admin" && !(await store().active(session.sessionId,user.id,true)))) { await store().revoke(session.sessionId); clearAuthCookies(res); return res.status(401).json({message:"Session expired"}); }
+  if (!user || user.disabled || (user.role === "admin" && !(await store().active(session.sessionId,user.id,true)))) { await store().revoke(session.sessionId); clearAuthCookies(res); return res.status(401).json({message:"Session expired"}); }
   setAuthCookies(res,signAccessToken(user.id,session.sessionId),session.refreshToken);
   return res.json({user:publicUser(user)});
 }
