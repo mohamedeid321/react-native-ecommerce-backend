@@ -138,6 +138,16 @@ test("catalog HTTP integration",{skip:!process.env.TEST_MONGO_URI||!process.env.
  assert.deepEqual(concurrent.map(r=>r.status).sort(),[200,201]);
  assert.equal((await Product.findById(mango._id)).stock,2.75);
  assert.equal(await Order.countDocuments({user:user._id}),3);
+ await call("/cart","POST",{productId:mango._id,quantity:1},customerCookie);
+ await call("/cart","POST",{productId:String(orange._id),quantity:2},customerCookie);
+ await Product.updateOne({_id:orange._id},{$set:{stock:1}});
+ const failed=await checkout("checkout-test-rollback-004");
+ assert.equal(failed.status,409);
+ assert.equal((await Product.findById(mango._id)).stock,2.75);
+ assert.equal((await Product.findById(orange._id)).stock,1);
+ assert.equal(await Order.countDocuments({user:user._id}),3);
+ assert.equal((await Cart.findOne({user:user._id})).items.length,2);
+
  }finally{cloudinary.uploader.upload_stream=originalUpload;cloudinary.uploader.destroy=originalDestroy;}
  assert.equal((await call("/categories/tropical","PUT",{name:"Tropical",isActive:false},adminCookie)).status,200);
  assert.ok(!(await (await call("/categories")).json()).categories.some(c=>c.slug==="tropical"));
