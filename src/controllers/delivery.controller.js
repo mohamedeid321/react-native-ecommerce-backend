@@ -46,3 +46,12 @@ export const approveDelivery=async(req,res)=>{
  res.json({success:true,order});
  }catch(e){serverError(res,e,"approveDelivery");}
 };
+
+export const createCourier=async(req,res)=>{
+ try{
+ const {username,email,phone,password}=req.body??{};
+ if(typeof username!=="string"||username.trim().length<3||username.length>80||typeof email!=="string"||email.length>254||!/^\S+@\S+\.\S+$/.test(email)||typeof phone!=="string"||!/^\+201[0125]\d{8}$/.test(phone)||typeof password!=="string"||password.length<12||Buffer.byteLength(password)>72)return fail(res,400,"Invalid courier details");
+ const user=await User.create({username:username.trim(),email:email.trim().toLowerCase(),phone,password,role:"delivery"});
+ res.status(201).json({success:true,courier:{id:user.id,username:user.username,email:user.email,phone:user.phone,role:user.role}});
+ }catch(e){if(e.code===11000)return fail(res,409,"Account already exists");serverError(res,e,"createCourier");}
+};
