@@ -14,3 +14,8 @@ Optimize from measured evidence: inspect query execution plans and index use, av
 
 ## Recorded baseline
 Run 45631717249: checkout p95 3940 ms, 29.28 HTTP requests/s, invariants passed. Run 45632105589 after local transaction admission gate: checkout p95 758.47 ms, 154.17 HTTP requests/s, all invariants passed. Read benchmark at 250 VUs: 486.95 HTTP requests/s, p95 22.46 ms, 0/7500 unexpected errors. This is a short runner-local benchmark, not a capacity guarantee. The gate is per instance; distributed load remains to be verified.
+
+## Read throughput investigation
+Run 45632570697: at 500 VUs, 14,582 requests, 940.8 requests/s, overall p95 90.60 ms and no errors; at 1000 VUs, 17,472 requests, 1106.84 requests/s, overall p95 978.79 ms and cart p95 1040 ms, no errors, latency thresholds failed. Run 45633409007 after parallel cart/auth reads: at 500 VUs, overall p95 417.09 ms, cart p95 508.09 ms, 11,476 requests, no errors; escalation stopped. Runner variability means the first successful 500-VU result is not a stable capacity guarantee.
+
+The subsequent cart GET uses one indexed aggregation to join the caller's cart to current active products, previous-order eligibility and pricing settings, without caching prices, stock or personal data. Mutations keep optimistic concurrency, checkout still validates authoritative data in the transaction. Hidden items are filtered on reads and may be removed on subsequent cart mutations. Retest against the identical workload before changing thresholds. For a longer soak, start with 5–10 minutes below the measured capacity; pre-seeded access cookies expire after 15 minutes, so a one-hour authenticated test requires a realistic refresh plan and should not bypass production rate limits.
