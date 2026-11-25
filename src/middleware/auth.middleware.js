@@ -19,7 +19,7 @@ export const protectRoute = async (req,res,next) => {
     if (cookie && !(await createSessionStore(getRedis()).active(decoded.sid,decoded.userId))) return res.status(401).json({message:"Session expired"});
     const user = await User.findById(decoded.userId).select("-password");
     if (!user) return res.status(401).json({message:"Authentication required"});
-    if (user.role === "admin" && !cookie) return res.status(403).json({message:"Admin MFA web login required"});
+    if (user.role === "admin" && (!cookie || !(await createSessionStore(getRedis()).active(decoded.sid,decoded.userId,true)))) return res.status(403).json({message:"Admin MFA web login required"});
     req.user = user;
     next();
   } catch { return res.status(503).json({message:"Authentication service unavailable"}); }
