@@ -7,8 +7,8 @@ export const unitPriceOf = (product) =>
   round2(product.price * (1 - (product.discount || 0) / 100));
 
 // المجموع الفرعي + التوصيل + الإجمالي من عناصر فيها unitPrice و quantity
-export const computeTotals = (items, {firstOrder=false} = {}) => {
+export const computeTotals = (items, {firstOrder=false,deliveryFee:fee=30,freeDeliveryThreshold=700,firstOrderFree=true} = {}) => {
   const subtotal = round2(items.reduce((sum, i) => sum + i.unitPrice * i.quantity, 0));
-  const deliveryFee = items.length && !firstOrder && subtotal < 700 ? 30 : 0;
+  const deliveryFee = items.length && !(firstOrder && firstOrderFree) && subtotal < freeDeliveryThreshold ? fee : 0;
   return { subtotal, deliveryFee, total: round2(subtotal + deliveryFee) };
 };
