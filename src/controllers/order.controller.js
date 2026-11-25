@@ -30,6 +30,7 @@ const restock = (items) =>
 // تأكيد الطلب: بياخد السلة + معلومات التوصيل، بيخصم المخزون، وبيفضي السلة
 export const createOrder = async (req,res) => {
  const key=req.get("Idempotency-Key");
+ if(req.authMode==="web"&&!key)return fail(res,400,"Checkout key required");
  if(key!==undefined&&!/^[a-zA-Z0-9_-]{16,128}$/.test(key))return fail(res,400,"Invalid checkout key");
  const session=await mongoose.startSession();
  let order,replayed=false;
@@ -38,6 +39,7 @@ export const createOrder = async (req,res) => {
  await session.withTransaction(async()=>{
   replayed=false;
   if(key){order=await Order.findOne({user:req.user._id,checkoutKey:key}).session(session);if(order){replayed=true;return;}}
+  if(req.authMode==="web"&&!/^\+201[0125]\d{8}$/.test(req.user.phone??""))reject(400,"Complete your phone number first");
   const settings=await getShopSettings(session);
   if(!settings.acceptingOrders)reject(409,"استقبال الطلبات متوقف مؤقتاً");
   const cart=await Cart.findOne({user:req.user._id}).session(session);
