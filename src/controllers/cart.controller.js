@@ -13,13 +13,18 @@ const getCartDoc = async (userId) =>
 // المنتجات اللي اتمسحت من المتجر بتتشال من السلة تلقائياً
 const buildCartResponse = async (cart) => {
   const ids = cart.items.map((i) => i.product);
-  const products = ids.length ? await Product.find({ _id: { $in: ids }, isActive: { $ne: false } }) : [];
+  if (!ids.length) return {items:[],count:0,subtotal:0,deliveryFee:0,total:0};
+  const [products,existingOrder,settings] = await Promise.all([
+    Product.find({ _id: { $in: ids }, isActive: { $ne: false } }).select("name image unit category price discount stock").lean(),
+    Order.exists({user:cart.user,status:{$ne:"cancelled"}}),
+    getShopSettings(),
+  ]);
   const byId = new Map(products.map((p) => [String(p._id), p]));
 
   const live = cart.items.filter((i) => byId.has(String(i.product)));
   if (live.length !== cart.items.length) {
-    cart.items = live;
-    await cart.save();
+    // GET is a read-only projection; mutations can persist cleanup with optimistic concurrency.
+    if (typeof cart.save === "function") {cart.items = live;await cart.save();}
   }
 
   const items = live.map((i) => {
@@ -40,8 +45,7 @@ const buildCartResponse = async (cart) => {
     };
   });
 
-  const firstOrder=!(await Order.exists({user:cart.user,status:{$ne:"cancelled"}}));
-  const settings=await getShopSettings();
+  const firstOrder=!existingOrder;
   return { items, count: items.length, ...computeTotals(items,{...settings,firstOrder}) };
 };
 
@@ -53,7 +57,9 @@ const parseQuantity = (value) => {
 
 export const getCart = async (req, res) => {
   try {
-    res.json({ success: true, cart: await buildCartResponse(await getCartDoc(req.user._id)) });
+    const cart = await Cart.findOne({user:req.user._id}).select("user items").lean();
+    if (!cart?.items.length) return res.json({success:true,cart:{items:[],count:0,subtotal:0,deliveryFee:0,total:0}});
+    res.json({ success: true, cart: await buildCartResponse(cart) });
   } catch (error) {
     if (error.name === "VersionError" || error.code === 11000) return fail(res, 409, "السلة اتغيرت، حاول مرة أخرى");
     serverError(res, error, "getCart");
