@@ -8,7 +8,7 @@ const getDoc = async (userId) =>
 // ids (للقلب الأحمر) + المنتجات كاملة (لكروت الحساب)، الأحدث أولاً
 const buildResponse = async (doc) => {
   const ids = doc.products.map(String).reverse();
-  const found = ids.length ? await Product.find({ _id: { $in: ids } }) : [];
+  const found = ids.length ? await Product.find({ _id: { $in: ids }, isActive: { $ne: false } }) : [];
   const byId = new Map(found.map((p) => [String(p._id), p]));
   const products = ids.filter((id) => byId.has(id)).map((id) => byId.get(id));
   return { ids: products.map((p) => String(p._id)), products };
@@ -25,7 +25,7 @@ export const getWishlist = async (req, res) => {
 export const addToWishlist = async (req, res) => {
   try {
     const { productId } = req.params;
-    if (!isValidId(productId) || !(await Product.findById(productId))) {
+    if (!isValidId(productId) || !(await Product.findOne({ _id: productId, isActive: { $ne: false } }))) {
       return fail(res, 404, "المنتج غير موجود");
     }
     const doc = await getDoc(req.user._id);
