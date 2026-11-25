@@ -10,10 +10,11 @@ export const listCouriers=async(req,res)=>{
 };
 export const assignCourier=async(req,res)=>{
  try{
- const {id}=req.params,{courierId}=req.body;
+ const {id}=req.params,{courierId,routeSequence}=req.body??{};
+ if(routeSequence!==undefined&&(!Number.isInteger(routeSequence)||routeSequence<1||routeSequence>10000))return fail(res,400,"Invalid route sequence");
  if(!isValidId(id)||!isValidId(courierId))return fail(res,400,"Invalid ID");
  if(!await User.exists({_id:courierId,role:"delivery",disabled:{$ne:true}}))return fail(res,404,"Courier not found");
- const order=await Order.findOneAndUpdate({_id:id,status:{$in:["placed","preparing","out_for_delivery"]},courierDeliveredAt:null},{$set:{courier:courierId,assignedAt:new Date()}},{new:true});
+ const order=await Order.findOneAndUpdate({_id:id,status:{$in:["placed","preparing","out_for_delivery"]},courierDeliveredAt:null},{$set:{courier:courierId,assignedAt:new Date(),...(routeSequence===undefined?{}:{routeSequence})}},{new:true});
  if(!order)return fail(res,409,"Order cannot be assigned");
  res.json({success:true,order});
  }catch(e){serverError(res,e,"assignCourier");}
@@ -26,7 +27,7 @@ export const listCourierOrders=async(req,res)=>{
  if(req.query.overdue==="true"){filter.deliveryDate={$lt:today()};filter.status={$in:["placed","preparing","out_for_delivery"]};}
  if(req.query.status!==undefined){if(!["placed","preparing","out_for_delivery","delivered","cancelled"].includes(req.query.status))return fail(res,400,"Invalid status");if(req.query.overdue==="true"&&["delivered","cancelled"].includes(req.query.status))return fail(res,400,"Invalid overdue status");filter.status=req.query.status;}
  const page=Math.min(10000,Math.max(1,parseInt(req.query.page)||1));
- const orders=await Order.find(filter).sort({deliveryDate:1,createdAt:1}).skip((page-1)*50).limit(50);
+ const orders=await Order.find(filter).sort({deliveryDate:1,routeSequence:1,createdAt:1}).skip((page-1)*50).limit(50);
  res.json({success:true,orders,page});
  }catch(e){serverError(res,e,"listCourierOrders");}
 };
