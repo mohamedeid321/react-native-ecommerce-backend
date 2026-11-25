@@ -1,3 +1,4 @@
+import {getShopSettings} from "../models/shopSettings.model.js";
 import Order from "../models/order.model.js";
 import Cart from "../models/cart.model.js";
 import Product from "../models/product.model.js";
@@ -40,7 +41,8 @@ const buildCartResponse = async (cart) => {
   });
 
   const firstOrder=!(await Order.exists({user:cart.user,status:{$ne:"cancelled"}}));
-  return { items, count: items.length, ...computeTotals(items,{firstOrder}) };
+  const settings=await getShopSettings();
+  return { items, count: items.length, ...computeTotals(items,{...settings,firstOrder}) };
 };
 
 const parseQuantity = (value) => {
