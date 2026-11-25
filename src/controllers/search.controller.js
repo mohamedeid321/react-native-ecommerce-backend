@@ -8,6 +8,7 @@ export const searchProducts = async (req, res) => {
     const filter = buildSearchFilter(req.query.q);
     if (!filter) return res.json({ success: true, query: "", products: [], hasMore: false });
 
+    filter.isActive = { $ne: false };
     if (req.query.category && req.query.category !== "all") {
       filter.category = String(req.query.category);
     }
