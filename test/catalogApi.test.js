@@ -6,6 +6,8 @@ import cloudinary from "../src/lib/cloudinary.js";
 import cartRoutes from "../src/routes/cartRoutes.js";
 import orderRoutes from "../src/routes/orderRoutes.js";
 import financeRoutes from "../src/routes/financeRoutes.js";
+import bannerRoutes from "../src/routes/bannerRoutes.js";
+import Banner from "../src/models/banner.model.js";
 import settingsRoutes from "../src/routes/settingsRoutes.js";
 import {ShopSettings} from "../src/models/shopSettings.model.js";
 import adminRoutes from "../src/routes/adminRoutes.js";
@@ -34,8 +36,8 @@ test("catalog HTTP integration",{skip:!process.env.TEST_MONGO_URI||!process.env.
  process.env.REDIS_URL=process.env.TEST_REDIS_URL;
  process.env.JWT_ACCESS_SECRET=randomBytes(32).toString("hex");
  await mongoose.connect(process.env.TEST_MONGO_URI,{dbName:"lotta_catalog_test_"+randomBytes(8).toString("hex")});
- await Promise.all([User.init(),Product.init(),Category.init(),Order.init(),Cart.init(),Purchase.init(),Expense.init(),OrderCost.init(),InventoryMovement.init(),ShopSettings.init()]);
- const app=express();app.use(express.json());app.use("/products",products);app.use("/categories",categories);app.use("/cart",cartRoutes);app.use("/orders",orderRoutes);app.use("/purchases",purchaseRoutes);app.use("/finance",financeRoutes);app.use("/inventory",inventoryRoutes);app.use("/admin",adminRoutes);app.use("/settings",settingsRoutes);
+ await Promise.all([User.init(),Product.init(),Category.init(),Order.init(),Cart.init(),Purchase.init(),Expense.init(),OrderCost.init(),InventoryMovement.init(),ShopSettings.init(),Banner.init()]);
+ const app=express();app.use(express.json());app.use("/products",products);app.use("/categories",categories);app.use("/cart",cartRoutes);app.use("/orders",orderRoutes);app.use("/purchases",purchaseRoutes);app.use("/finance",financeRoutes);app.use("/inventory",inventoryRoutes);app.use("/admin",adminRoutes);app.use("/settings",settingsRoutes);app.use("/banners",bannerRoutes);
  const server=app.listen(0);await new Promise(r=>server.once("listening",r));
  const base="http://127.0.0.1:"+server.address().port;
  const call=(path,method="GET",body,cookie="")=>fetch(base+path,{method,headers:{"Content-Type":"application/json",Cookie:cookie},body:body===undefined?undefined:JSON.stringify(body)});
@@ -336,6 +338,33 @@ test("catalog HTTP integration",{skip:!process.env.TEST_MONGO_URI||!process.env.
  assert.equal((await Order.findById(order._id)).deliveryFee,0);
  const persisted=(await (await call("/settings")).json()).settings;
  assert.equal(persisted.cutoffHour,20);assert.equal(persisted.acceptingOrders,true);assert.equal(persisted.firstOrderFree,false);
+ let bannerUploads=0;const removedBannerImages=[];
+ cloudinary.uploader.upload_stream=(options,cb)=>new Writable({write(chunk,enc,next){next();},final(next){assert.equal(options.folder,"lotta-banners");const id="lotta-banners/test-"+(++bannerUploads);cb(null,{secure_url:"https://example.com/"+id+".png",public_id:id});next();}});
+ cloudinary.uploader.destroy=async id=>{removedBannerImages.push(id);return {result:"ok"};};
+ const bannerForm=(fields={})=>{const form=new FormData();for(const [k,v] of Object.entries({title:"Fruit offer",alt:"Fruit basket",targetType:"offers",isActive:"true",sortOrder:"2",...fields}))form.append(k,v);form.append("image",new Blob([Buffer.from("89504e470d0a1a0a","hex")],{type:"image/png"}),"banner.png");return form;};
+ const postBanner=(fields,token=adminCookie)=>fetch(base+"/banners",{method:"POST",headers:{Cookie:token},body:bannerForm(fields)});
+ assert.equal((await postBanner({},customerCookie)).status,403);
+ assert.equal((await postBanner({targetType:"none",targetValue:"https://evil.example"})).status,400);
+ assert.equal(bannerUploads,0);
+ const activeBanner=await postBanner({});assert.equal(activeBanner.status,201);
+ const banner=(await activeBanner.json()).banner;assert.equal("imagePublicId" in banner,false);
+ const futureBanner=await postBanner({title:"Future campaign",startsAt:new Date(Date.now()+86400000).toISOString()});assert.equal(futureBanner.status,201);
+ const hiddenBanner=await postBanner({title:"Hidden campaign",isActive:"false"});assert.equal(hiddenBanner.status,201);
+ const expiredBanner=await postBanner({title:"Expired campaign",endsAt:new Date(Date.now()-86400000).toISOString()});assert.equal(expiredBanner.status,201);
+ const publicBanners=await (await call("/banners")).json();
+ assert.equal(publicBanners.banners.length,1);assert.equal(publicBanners.banners[0]._id,banner._id);
+ assert.equal("imagePublicId" in publicBanners.banners[0],false);
+ assert.equal((await call("/banners/admin","GET",undefined,customerCookie)).status,403);
+ assert.equal((await (await call("/banners/admin","GET",undefined,adminCookie)).json()).count,4);
+ assert.equal((await call("/banners/"+banner._id,"PATCH",{sortOrder:-1},adminCookie)).status,400);
+ assert.equal((await call("/banners/"+banner._id,"PATCH",{targetType:"product",targetValue:mango._id},adminCookie)).status,200);
+ const imageForm=new FormData();imageForm.append("image",new Blob([Buffer.from("89504e470d0a1a0a","hex")],{type:"image/png"}),"replacement.png");
+ assert.equal((await fetch(base+"/banners/"+banner._id+"/image",{method:"PUT",headers:{Cookie:adminCookie},body:imageForm})).status,200);
+ assert.ok(removedBannerImages.includes("lotta-banners/test-1"));
+ assert.equal((await call("/banners/"+banner._id,"DELETE",undefined,adminCookie)).status,200);
+ assert.equal((await (await call("/banners")).json()).banners.length,0);
+ assert.equal((await Banner.findById(banner._id)).archived,true);
+
 
 
 
