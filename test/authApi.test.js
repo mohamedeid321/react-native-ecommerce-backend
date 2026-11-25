@@ -44,6 +44,11 @@ test("web auth HTTP integration",{skip:!process.env.TEST_MONGO_URI || !process.e
   assert.equal(refreshed.status,200);
   assert.equal((await call("/web/logout-all",{},cookies(refreshed))).status,204);
   assert.equal((await call("/web/me",undefined,cookies(reg))).status,401);
+  const promoted=await call("/web/login",{identifier:details.email,password:details.password});
+  await User.updateOne({email:details.email},{$set:{role:"admin"}});
+  assert.equal((await call("/web/me",undefined,cookies(promoted))).status,403);
+  assert.equal((await call("/web/refresh",{},cookies(promoted))).status,401);
+  await User.updateOne({email:details.email},{$set:{role:"customer"}});
   const secret=authenticator.generateSecret();
   await User.create({username:"Admin test",email:"admin@example.com",password:details.password,role:"admin",mfaSecret:encryptTotp(secret)});
   const admin={identifier:"admin@example.com",password:details.password};
