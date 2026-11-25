@@ -1,16 +1,18 @@
+import {getRedis} from "../lib/redis.js";
+import {createSessionStore} from "../lib/sessionStore.js";
 import Order from "../models/order.model.js";
 import User from "../models/user.model.js";
 import {fail,isValidId,serverError} from "../utils/http.js";
 import {notifyUser} from "../utils/notify.js";
 const today=()=>new Intl.DateTimeFormat("en-CA",{timeZone:"Africa/Cairo",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
 export const listCouriers=async(req,res)=>{
- try{res.json({success:true,couriers:await User.find({role:"delivery"}).select("username displayName phone").limit(200)});}catch(e){serverError(res,e,"listCouriers");}
+ try{res.json({success:true,couriers:await User.find({role:"delivery"}).select("username displayName phone disabled").limit(200)});}catch(e){serverError(res,e,"listCouriers");}
 };
 export const assignCourier=async(req,res)=>{
  try{
  const {id}=req.params,{courierId}=req.body;
  if(!isValidId(id)||!isValidId(courierId))return fail(res,400,"Invalid ID");
- if(!await User.exists({_id:courierId,role:"delivery"}))return fail(res,404,"Courier not found");
+ if(!await User.exists({_id:courierId,role:"delivery",disabled:{$ne:true}}))return fail(res,404,"Courier not found");
  const order=await Order.findOneAndUpdate({_id:id,status:{$in:["placed","preparing","out_for_delivery"]},courierDeliveredAt:null},{$set:{courier:courierId,assignedAt:new Date()}},{new:true});
  if(!order)return fail(res,409,"Order cannot be assigned");
  res.json({success:true,order});
@@ -22,7 +24,7 @@ export const listCourierOrders=async(req,res)=>{
  if(typeof date!=="string"||!/^\d{4}-\d{2}-\d{2}$/.test(date))return fail(res,400,"Invalid date");
  const filter={courier:req.user._id,deliveryDate:date};
  if(req.query.overdue==="true"){filter.deliveryDate={$lt:today()};filter.status={$in:["placed","preparing","out_for_delivery"]};}
- if(req.query.status!==undefined){if(!["placed","preparing","out_for_delivery","delivered","cancelled"].includes(req.query.status))return fail(res,400,"Invalid status");filter.status=req.query.status;}
+ if(req.query.status!==undefined){if(!["placed","preparing","out_for_delivery","delivered","cancelled"].includes(req.query.status))return fail(res,400,"Invalid status");if(req.query.overdue==="true"&&["delivered","cancelled"].includes(req.query.status))return fail(res,400,"Invalid overdue status");filter.status=req.query.status;}
  const page=Math.min(10000,Math.max(1,parseInt(req.query.page)||1));
  const orders=await Order.find(filter).sort({deliveryDate:1,createdAt:1}).skip((page-1)*50).limit(50);
  res.json({success:true,orders,page});
@@ -54,4 +56,18 @@ export const createCourier=async(req,res)=>{
  const user=await User.create({username:username.trim(),email:email.trim().toLowerCase(),phone,password,role:"delivery"});
  res.status(201).json({success:true,courier:{id:user.id,username:user.username,email:user.email,phone:user.phone,role:user.role}});
  }catch(e){if(e.code===11000)return fail(res,409,"Account already exists");serverError(res,e,"createCourier");}
+};
+
+export const setCourierDisabled=async(req,res)=>{
+ try{
+ const {id}=req.params,{disabled}=req.body??{};
+ if(!isValidId(id)||typeof disabled!=="boolean")return fail(res,400,"Invalid courier status");
+ const courier=await User.findOne({_id:id,role:"delivery"});
+ if(!courier)return fail(res,404,"Courier not found");
+ // Revoke before enabling; disable in Mongo first so access fails even if Redis is unavailable.
+ if(disabled)await User.updateOne({_id:id,role:"delivery"},{$set:{disabled:true}});
+ await createSessionStore(getRedis()).revokeAll(courier.id);
+ if(!disabled)await User.updateOne({_id:id,role:"delivery"},{$set:{disabled:false}});
+ return res.json({success:true,disabled});
+ }catch(e){serverError(res,e,"setCourierDisabled");}
 };
