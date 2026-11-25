@@ -30,3 +30,9 @@ Run 45636058105: at 1000 VUs with cache, 28,794 requests, 1855.87 requests/s, p9
 
 ## Mixed shopping workload
 Separate workflow starts fresh runner-local Mongo/Redis, 1000 distinct synthetic accounts, 20 well-stocked products, empty carts and no existing orders. For 60 seconds, 850 accounts browse, 100 repeatedly merge/change/delete cart lines, 50 stagger one purchase of two units and repeat checkout with the same key, then browse. Gates: 50 successful purchase journeys, at least 100 successful cart writes, <0.1% unexpected errors, read p95 <500 ms, cart-write p95 <1000 ms, checkout p95 <2000 ms. Database verification requires 50 unique orders, 100 units sold and reconciled stock, and 50 emptied buyer carts. The test uses pre-seeded sessions; password login is covered separately. Not an actual browser or production deployment benchmark.
+
+## Mixed benchmark result
+Run 45650508538 passed: 42,686 HTTP requests, 690 requests/s, zero unexpected errors, 3,227 successful cart actions, 50 unique completed checkouts. Read p95 62.19 ms, cart-write p95 333.48 ms, checkout p95 175.19 ms including replay. All 100 sold units and 50 emptied buyer carts reconciled.
+
+## Real refresh endpoint benchmark
+Dedicated isolated runner starts the unmodified full Express API. 1000 distinct synthetic sessions are spread across 20 real runner-local loopback source IPs (50 sessions/IP), staying below the production rate limit of 60 refresh requests per IP per 15 minutes. It verifies every refresh rotates cookies and the new access cookie retrieves the matching user. Reusing the first refresh cookie must revoke its session, and the 61st refresh from that IP must be rejected with 429. It measures p95 of the refresh burst against a 2-second target. No forged proxy headers, modified production limits, or production data. Real proxy/NAT behavior still needs staging checks. This test simulates a burst, not the rate of session refreshes during a typical hour.
