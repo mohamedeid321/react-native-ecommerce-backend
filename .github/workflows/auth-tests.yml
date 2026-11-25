@@ -1,4 +1,4 @@
-name: Authentication tests
+name: Backend release checks
 on:
   push:
     branches: [develop/lotta-web-backend]
@@ -37,5 +37,11 @@ jobs:
           done
           exit 1
       - run: npm install --no-audit --no-fund
-      - run: find src test -name '*.js' -print0 | xargs -0 -n1 node --check
+      - name: Dependency audit
+        run: npm audit --omit=dev --audit-level=high
+      - run: find src test scripts -name '*.js' -print0 | xargs -0 -n1 node --check
       - run: npm test
+      - name: Export updated dependency lock for review
+        if: always()
+        run: |
+          node --input-type=module -e 'import fs from "node:fs"; const s=fs.readFileSync("package-lock.json","utf8"); for(let i=0;i<s.length;i+=2000) console.log("LOTTA_LOCK_CHUNK "+JSON.stringify(s.slice(i,i+2000)));'
