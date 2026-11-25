@@ -4,7 +4,10 @@ import { webRegister, webLogin, webRefresh, webLogout, webMe, webLogoutAll, webC
 import { protectRoute } from "../middleware/auth.middleware.js";
 import { authRateLimit } from "../middleware/authRateLimit.js";
 import { googleLogin, linkGoogle } from "../controllers/googleAuth.controller.js";
+import { enrollAdminMfa, confirmAdminMfa } from "../controllers/adminMfa.controller.js";
 const router = express.Router();
+router.post("/web/admin/mfa/enroll", authRateLimit("mfa-enroll",5), enrollAdminMfa);
+router.post("/web/admin/mfa/confirm", authRateLimit("mfa-confirm",10), confirmAdminMfa);
 router.post("/web/google/link", authRateLimit("google-link",10), protectRoute, linkGoogle);
 router.post("/web/google", authRateLimit("google",20), googleLogin);
 router.post("/web/register", authRateLimit("/web/register", 10), webRegister);
