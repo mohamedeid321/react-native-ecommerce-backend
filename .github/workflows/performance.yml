@@ -1,0 +1,81 @@
+name: Backend performance benchmark
+on:
+  push:
+    branches: [develop/lotta-web-backend]
+    paths:
+      - 'performance/**'
+      - '.github/workflows/performance.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    services:
+      redis:
+        image: redis:7
+        ports: ['6379:6379']
+        options: --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      MONGO_URI: mongodb://127.0.0.1:27017/lotta_performance
+      REDIS_URL: redis://127.0.0.1:6379
+      CLIENT_URL: http://localhost:5173
+      NODE_ENV: test
+      PORT: 3000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --no-audit --no-fund
+      - name: Start isolated Mongo replica set
+        run: |
+          docker run -d --name lotta-perf-mongo -p 27017:27017 mongo:7 --replSet rs0 --bind_ip_all
+          for i in $(seq 1 30); do
+            if docker exec lotta-perf-mongo mongosh --quiet --eval 'db.adminCommand({ping:1}).ok' | grep -q 1; then break; fi
+            sleep 2
+          done
+          docker exec lotta-perf-mongo mongosh --quiet --eval 'rs.initiate({_id:"rs0",members:[{_id:0,host:"127.0.0.1:27017"}]})'
+          for i in $(seq 1 30); do
+            if docker exec lotta-perf-mongo mongosh --quiet --eval 'db.hello().isWritablePrimary' | grep -q true; then exit 0; fi
+            sleep 2
+          done
+          exit 1
+      - name: Generate disposable fixture and start API
+        run: |
+          echo "JWT_ACCESS_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+      - name: Seed disposable fixture
+        run: node performance/seed.js
+      - name: Start full Express app
+        run: |
+          node src/index.js > /tmp/lotta-perf-api.log 2>&1 &
+          echo $! > /tmp/lotta-perf-api.pid
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3000/api/health/ready; then exit 0; fi
+            sleep 1
+          done
+          exit 1
+      - name: Pull k6
+        run: docker pull grafana/k6:0.57.0
+      - name: Concurrent login benchmark
+        run: docker run --rm --network host --user "$(id -u):$(id -g)" -v "$PWD/performance:/perf:ro" grafana/k6:0.57.0 run /perf/login.k6.js
+      - name: Concurrent checkout and retry benchmark
+        id: checkout
+        run: docker run --rm --network host --user "$(id -u):$(id -g)" -v "$PWD/performance:/perf:ro" grafana/k6:0.57.0 run /perf/checkout.k6.js
+      - name: Verify database invariants
+        if: always() && steps.checkout.outcome != 'skipped'
+        run: node performance/verify.js
+      - name: Progressive read benchmark
+        if: always() && steps.checkout.outcome != 'skipped'
+        run: |
+          for vus in 10 50 100 250; do
+            echo "BENCHMARK_VUS=$vus"
+            docker run --rm --network host --user "$(id -u):$(id -g)" -v "$PWD/performance:/perf:ro" -e VUS="$vus" grafana/k6:0.57.0 run /perf/read.k6.js || exit 1
+          done
+      - name: Cleanup disposable fixture
+        if: always()
+        run: |
+          rm -f performance/fixture.json
+          if [ -f /tmp/lotta-perf-api.pid ]; then kill "$(cat /tmp/lotta-perf-api.pid)" || true; fi
+          docker rm -f lotta-perf-mongo || true
