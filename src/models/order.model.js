@@ -15,7 +15,7 @@ const orderSchema = new mongoose.Schema(
         image: { type: String, default: "" },
         unit: { type: String, default: "" },
         unitPrice: { type: Number, required: true }, // بعد الخصم وقت الطلب
-        quantity: { type: Number, required: true, min: 1 },
+        quantity: { type: Number, required: true, min: 0.001, max: 99 },
         lineTotal: { type: Number, required: true },
       },
     ],
