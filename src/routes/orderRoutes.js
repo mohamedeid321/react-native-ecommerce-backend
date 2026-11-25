@@ -1,3 +1,4 @@
+import {listCouriers,assignCourier,listCourierOrders,reportDelivered,approveDelivery} from "../controllers/delivery.controller.js";
 import express from "express";
 import { protectRoute, adminRoute } from "../middleware/auth.middleware.js";
 import {
@@ -11,6 +12,12 @@ import {
 
 const router = express.Router();
 router.use(protectRoute);
+const courierOnly=(req,res,next)=>req.user.role==="delivery"?next():res.status(403).json({message:"Courier only"});
+router.get("/couriers",adminRoute,listCouriers);
+router.get("/courier/my",courierOnly,listCourierOrders);
+router.patch("/:id/assign",adminRoute,assignCourier);
+router.patch("/:id/report-delivered",courierOnly,reportDelivered);
+router.patch("/:id/approve-delivery",adminRoute,approveDelivery);
 
 // العميل
 router.post("/", createOrder);
