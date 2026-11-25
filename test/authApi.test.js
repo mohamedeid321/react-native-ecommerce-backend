@@ -28,6 +28,8 @@ test("web auth HTTP integration",{skip:!process.env.TEST_MONGO_URI || !process.e
  const call=(path,body,cookie="",origin="http://localhost:5173",csrf="1")=>fetch(base+path,{method:body===undefined?"GET":"POST",headers:{"Content-Type":"application/json",Origin:origin,"X-Lotta-CSRF":csrf,Cookie:cookie},body:body===undefined?undefined:JSON.stringify(body)});
  const cookies=r=>r.headers.getSetCookie().map(x=>x.split(";")[0]).join("; ");
  try {
+  assert.equal((await call("/login",{email:123,password:"example"})).status,400);
+  assert.equal((await call("/register",{email:"invalid@example.com",username:"Invalid",password:123456789})).status,400);
   const preflight=await fetch(base+"/web/login",{method:"OPTIONS",headers:{Origin:"http://localhost:5173","Access-Control-Request-Method":"POST","Access-Control-Request-Headers":"X-Lotta-CSRF"}});
   assert.equal(preflight.headers.get("access-control-allow-origin"),"http://localhost:5173");
   assert.equal(preflight.headers.get("access-control-allow-credentials"),"true");
