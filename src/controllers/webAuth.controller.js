@@ -58,3 +58,22 @@ export async function webLogout(req,res) {
   return res.sendStatus(204);
 }
 export function webMe(req,res) { res.set("Cache-Control","no-store"); return res.json({user:publicUser(req.user)}); }
+
+export async function webLogoutAll(req,res) {
+  await store().revokeAll(req.user.id);
+  clearAuthCookies(res);
+  return res.sendStatus(204);
+}
+export async function webCompleteProfile(req,res) {
+  const phone = normalizePhone(req.body?.phone);
+  if (!phone) return res.status(400).json({message:"Invalid phone"});
+  if (req.user.phone) return res.status(409).json({message:"Phone already set"});
+  try {
+    const user = await User.findOneAndUpdate({_id:req.user.id,phone:{$exists:false}},{$set:{phone}},{new:true,runValidators:true});
+    if (!user) return res.status(409).json({message:"Profile already updated"});
+    return res.json({user:publicUser(user),phoneVerified:false});
+  } catch(error) {
+    if(error.code===11000) return res.status(409).json({message:"Phone already in use"});
+    throw error;
+  }
+}
