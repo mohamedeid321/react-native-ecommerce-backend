@@ -9,6 +9,8 @@ on:
       - 'src/controllers/product.controller.js'
       - 'src/controllers/search.controller.js'
       - 'src/controllers/cart.controller.js'
+      - 'src/middleware/auth.middleware.js'
+      - 'src/lib/sessionStore.js'
       - 'src/lib/db.js'
       - '.github/workflows/performance.yml'
   workflow_dispatch:
