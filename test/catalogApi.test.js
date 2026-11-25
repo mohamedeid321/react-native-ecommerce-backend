@@ -1,6 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import express from "express";
+import {Writable} from "node:stream";
+import cloudinary from "../src/lib/cloudinary.js";
+import cartRoutes from "../src/routes/cartRoutes.js";
+import orderRoutes from "../src/routes/orderRoutes.js";
+import Cart from "../src/models/cart.model.js";
+import DeliveryInfo from "../src/models/deliveryInfo.model.js";
+import {CITIES} from "../src/config/shop.js";
 import mongoose from "mongoose";
 import {randomBytes} from "node:crypto";
 import Product from "../src/models/product.model.js";
@@ -16,7 +23,7 @@ test("catalog HTTP integration",{skip:!process.env.TEST_MONGO_URI||!process.env.
  process.env.JWT_ACCESS_SECRET=randomBytes(32).toString("hex");
  await mongoose.connect(process.env.TEST_MONGO_URI,{dbName:"lotta_catalog_test_"+randomBytes(8).toString("hex")});
  await Promise.all([User.init(),Product.init(),Category.init()]);
- const app=express();app.use(express.json());app.use("/products",products);app.use("/categories",categories);
+ const app=express();app.use(express.json());app.use("/products",products);app.use("/categories",categories);app.use("/cart",cartRoutes);app.use("/orders",orderRoutes);
  const server=app.listen(0);await new Promise(r=>server.once("listening",r));
  const base="http://127.0.0.1:"+server.address().port;
  const call=(path,method="GET",body,cookie="")=>fetch(base+path,{method,headers:{"Content-Type":"application/json",Cookie:cookie},body:body===undefined?undefined:JSON.stringify(body)});
@@ -47,6 +54,35 @@ test("catalog HTTP integration",{skip:!process.env.TEST_MONGO_URI||!process.env.
  assert.equal((await call("/categories/tropical","PUT",{name:"Tropical",isActive:true},customerCookie)).status,403);
  assert.equal((await call("/categories/tropical","PUT",{name:"Tropical",isActive:true},adminCookie)).status,200);
  assert.ok((await (await call("/categories")).json()).categories.some(c=>c.slug==="tropical"));
+ const originalUpload=cloudinary.uploader.upload_stream, originalDestroy=cloudinary.uploader.destroy;
+ cloudinary.uploader.upload_stream=(options,cb)=>new Writable({write(chunk,enc,next){next();},final(next){cb(null,{secure_url:"https://example.com/new.png"});next();}});
+ cloudinary.uploader.destroy=async()=>({result:"ok"});
+ try{
+ const form=new FormData();
+ for(const [k,v] of Object.entries({name:"Mango",description:"Fresh mango",price:"30",purchasePrice:"20",stock:"3.5",category:"tropical"}))form.append(k,v);
+ form.append("image",new Blob([Buffer.from("89504e470d0a1a0a","hex")],{type:"image/png"}),"mango.png");
+ const created=await fetch(base+"/products",{method:"POST",headers:{Cookie:adminCookie},body:form});
+ assert.equal(created.status,201);
+ const mango=(await created.json()).product;
+ assert.equal(mango.stock,3.5);assert.equal("purchasePrice" in mango,false);
+ assert.equal((await call("/products/"+mango._id,"PUT",{price:-1},adminCookie)).status,400);
+ assert.equal((await call("/products/"+mango._id,"PUT",{discount:101},adminCookie)).status,400);
+ assert.equal((await call("/products/"+mango._id,"PUT",{stock:-1},adminCookie)).status,400);
+ assert.equal((await call("/products/"+mango._id,"PUT",{purchasePrice:-1},adminCookie)).status,400);
+ assert.equal((await call("/products/"+mango._id,"PUT",{price:35},customerCookie)).status,403);
+ assert.equal((await call("/products/"+mango._id,"PUT",{price:35,purchasePrice:22,stock:4.5},adminCookie)).status,200);
+ assert.equal((await (await call("/products/"+mango._id)).json()).product.price,35);
+ assert.equal((await (await call("/products/search?q=Mango")).json()).products.length,1);
+ assert.equal((await call("/cart","POST",{productId:mango._id,quantity:1},customerCookie)).status,201);
+ await DeliveryInfo.create({user:user._id,city:CITIES[0],neighborhood:1,building:"1",apartment:"1",floor:"1",phone1:"01012345678"});
+ assert.equal((await call("/products/"+mango._id+"/visibility","PATCH",{isActive:false},adminCookie)).status,200);
+ assert.equal((await call("/orders","POST",{},customerCookie)).status,400);
+ assert.equal((await call("/cart","POST",{productId:mango._id,quantity:1},customerCookie)).status,404);
+ assert.equal((await (await call("/products/search?q=Mango")).json()).products.length,0);
+ assert.equal((await (await call("/products/category/tropical")).json()).products.length,0);
+ assert.ok(!(await (await call("/products/recommendations")).json()).some(p=>p._id===mango._id));
+ assert.equal((await Product.findById(mango._id)).stock,4.5);
+ }finally{cloudinary.uploader.upload_stream=originalUpload;cloudinary.uploader.destroy=originalDestroy;}
  assert.equal((await call("/categories/tropical","PUT",{name:"Tropical",isActive:false},adminCookie)).status,200);
  assert.ok(!(await (await call("/categories")).json()).categories.some(c=>c.slug==="tropical"));
  }finally{await new Promise(r=>server.close(r));await mongoose.connection.dropDatabase();await mongoose.disconnect();await getRedis().quit();}
