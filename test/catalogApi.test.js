@@ -5,6 +5,8 @@ import {Writable} from "node:stream";
 import cloudinary from "../src/lib/cloudinary.js";
 import cartRoutes from "../src/routes/cartRoutes.js";
 import orderRoutes from "../src/routes/orderRoutes.js";
+import purchaseRoutes from "../src/routes/purchaseRoutes.js";
+import Purchase from "../src/models/purchase.model.js";
 import Order from "../src/models/order.model.js";
 import Cart from "../src/models/cart.model.js";
 import DeliveryInfo from "../src/models/deliveryInfo.model.js";
@@ -23,8 +25,8 @@ test("catalog HTTP integration",{skip:!process.env.TEST_MONGO_URI||!process.env.
  process.env.REDIS_URL=process.env.TEST_REDIS_URL;
  process.env.JWT_ACCESS_SECRET=randomBytes(32).toString("hex");
  await mongoose.connect(process.env.TEST_MONGO_URI,{dbName:"lotta_catalog_test_"+randomBytes(8).toString("hex")});
- await Promise.all([User.init(),Product.init(),Category.init(),Order.init(),Cart.init()]);
- const app=express();app.use(express.json());app.use("/products",products);app.use("/categories",categories);app.use("/cart",cartRoutes);app.use("/orders",orderRoutes);
+ await Promise.all([User.init(),Product.init(),Category.init(),Order.init(),Cart.init(),Purchase.init()]);
+ const app=express();app.use(express.json());app.use("/products",products);app.use("/categories",categories);app.use("/cart",cartRoutes);app.use("/orders",orderRoutes);app.use("/purchases",purchaseRoutes);
  const server=app.listen(0);await new Promise(r=>server.once("listening",r));
  const base="http://127.0.0.1:"+server.address().port;
  const call=(path,method="GET",body,cookie="")=>fetch(base+path,{method,headers:{"Content-Type":"application/json",Cookie:cookie},body:body===undefined?undefined:JSON.stringify(body)});
@@ -183,6 +185,26 @@ test("catalog HTTP integration",{skip:!process.env.TEST_MONGO_URI||!process.env.
  assert.equal((await call(disable,"PATCH",{disabled:false},adminCookie)).status,200);
  assert.equal((await call("/orders/courier/my","GET",undefined,ca)).status,401);
  assert.equal((await call("/orders/courier/my","GET",undefined,await cookie(courierA,false))).status,200);
+ const day=order.deliveryDate, purchaseUrl="/purchases/"+day+"/"+mango._id;
+ assert.equal((await call("/purchases?date="+day,"GET",undefined,customerCookie)).status,403);
+ assert.equal((await call("/purchases?date="+day,"GET",undefined,ca)).status,401);
+ assert.equal((await call("/purchases?date=2026-02-30","GET",undefined,adminCookie)).status,400);
+ const required=await (await call("/purchases?date="+day,"GET",undefined,adminCookie)).json();
+ const demand=required.items.find(i=>i.product===mango._id);
+ assert.equal(demand.requiredQuantity,1.75);
+ assert.equal(demand.estimatedUnitCost,22);
+ assert.equal(demand.estimatedCost,38.5);
+ assert.equal(demand.recorded,false);
+ assert.equal((await call(purchaseUrl,"PUT",{quantity:-1,unitCost:21},adminCookie)).status,400);
+ assert.equal((await call(purchaseUrl,"PUT",{quantity:2,unitCost:21},customerCookie)).status,403);
+ assert.equal((await call(purchaseUrl,"PUT",{quantity:2,unitCost:21},adminCookie)).status,200);
+ assert.equal((await call(purchaseUrl,"PUT",{quantity:2,unitCost:21},adminCookie)).status,200);
+ assert.equal(await Purchase.countDocuments({date:day,product:mango._id}),1);
+ const report=await (await call("/purchases?date="+day,"GET",undefined,adminCookie)).json();
+ const actual=report.items.find(i=>i.product===mango._id);
+ assert.equal(actual.actualCost,42);assert.equal(actual.variance,0.25);assert.equal(actual.recorded,true);
+ assert.equal(report.totals.actualCost,42);
+
 
 
  }finally{cloudinary.uploader.upload_stream=originalUpload;cloudinary.uploader.destroy=originalDestroy;}
