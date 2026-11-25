@@ -20,12 +20,12 @@ try{
  const products=await Product.insertMany(Array.from({length:300},(_,i)=>({name:"Test fruit "+i,description:"Synthetic test fruit apple orange",price:30,unit:"kg",category:"fruits",image:"https://example.invalid/fruit.png",stock:i===0?30:1000})));
  const password="Synthetic-performance-only-2026";
  const hash=await bcrypt.hash(password,10);
- const users=await User.insertMany(Array.from({length:250},(_,i)=>({username:"Perf customer "+i,email:"perf-"+i+"@example.invalid",phone:"+2010"+String(i).padStart(8,"0"),password:hash,role:"customer"})));
+ const users=await User.insertMany(Array.from({length:1000},(_,i)=>({username:"Perf customer "+i,email:"perf-"+i+"@example.invalid",phone:"+2010"+String(i).padStart(8,"0"),password:hash,role:"customer"})));
  await Cart.insertMany(users.map(u=>({user:u._id,items:[{product:products[0]._id,quantity:1}]})));
  await DeliveryInfo.insertMany(users.map(u=>({user:u._id,city:CITIES[0],neighborhood:28,building:"1",apartment:"1",floor:"1",phone1:"01000000000"})));
  await Counter.create({_id:"order",seq:100000});
  const store=createSessionStore(getRedis());
  const accounts=await Promise.all(users.map(async u=>{const s=await store.create(u.id);return {id:u.id,email:u.email,access:signAccessToken(u.id,s.sessionId)};}));
  await writeFile("performance/fixture.json",JSON.stringify({accounts,password,productId:String(products[0]._id)}),{mode:0o600});
- console.log("Seeded 300 products, 250 customers, checkout stock 30");
+ console.log("Seeded 300 products, 1000 customers, checkout stock 30");
 }finally{await mongoose.disconnect();await getRedis().quit();}
