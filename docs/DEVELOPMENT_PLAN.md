@@ -14,3 +14,6 @@ No production deployment or main merge until review. Separate test MongoDB and R
 
 ## Launch decision: phone verification
 Phone OTP is deferred by owner decision. Phone numbers are normalized and unique but unverified. Do not represent them as verified. First-order manual confirmation is recommended. Admin MFA remains required; use authenticator-app TOTP without SMS charges.
+
+## Mobile launch scope
+Defer native mobile session migration until React Native development resumes. Preserve legacy customer bearer compatibility; admin legacy bearer access is intentionally blocked pending MFA-compatible login. Web launch requires authentication integration tests.
