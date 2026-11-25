@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import express from "express";
+import { OAuth2Client } from "google-auth-library";
 import mongoose from "mongoose";
 import { authenticator } from "otplib";
 import { randomBytes } from "node:crypto";
@@ -50,6 +51,28 @@ test("web auth HTTP integration",{skip:!process.env.TEST_MONGO_URI || !process.e
   const code=authenticator.generate(secret);
   assert.equal((await call("/web/login",{...admin,code})).status,200);
   assert.equal((await call("/web/login",{...admin,code})).status,401);
+  // Mock only the external Google verification boundary; exercise real DB and HTTP.
+  process.env.GOOGLE_CLIENT_ID="test-client.apps.googleusercontent.com";
+  const original=OAuth2Client.prototype.verifyIdToken;
+  OAuth2Client.prototype.verifyIdToken=async function({idToken,audience}){
+   assert.equal(audience,process.env.GOOGLE_CLIENT_ID);
+   if(idToken==="invalid") throw new Error("invalid token");
+   return {getPayload:()=>({sub:idToken==="existing"?"existing-sub":"new-sub",email:idToken==="existing"?details.email:"google@example.com",email_verified:idToken!=="unverified",name:"Google Customer"})};
+  };
+  try {
+   assert.equal((await call("/web/google",{credential:"invalid"})).status,401);
+   assert.equal((await call("/web/google",{credential:"unverified"})).status,401);
+   assert.equal((await call("/web/google",{credential:"existing"})).status,409);
+   const google=await call("/web/google",{credential:"new"});
+   assert.equal(google.status,200);
+   const profile=await google.json();
+   assert.equal(profile.profileIncomplete,true);
+   assert.equal((await call("/web/complete-profile",{phone:"01012345678"},cookies(google))).status,409);
+   assert.equal((await call("/web/complete-profile",{phone:"01112345678"},cookies(google))).status,200);
+   const again=await call("/web/google",{credential:"new"});
+   assert.equal(again.status,200);
+   assert.equal((await again.json()).profileIncomplete,false);
+  } finally { OAuth2Client.prototype.verifyIdToken=original; }
   let last;
   for(let i=0;i<21;i++) last=await call("/web/login",{identifier:"none@example.com",password:"wrong"});
   assert.equal(last.status,429);
