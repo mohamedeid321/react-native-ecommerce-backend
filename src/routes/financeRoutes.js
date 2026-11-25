@@ -2,6 +2,7 @@ import express from "express";
 import Order from "../models/order.model.js";
 import Purchase from "../models/purchase.model.js";
 import OrderCost from "../models/orderCost.model.js";
+import InventoryMovement from "../models/inventoryMovement.model.js";
 import Expense from "../models/expense.model.js";
 import {protectRoute,adminRoute} from "../middleware/auth.middleware.js";
 import {fail,isValidId,serverError} from "../utils/http.js";
@@ -14,12 +15,13 @@ router.get("/",async(req,res)=>{
  try{
  const range=financeRange(req.query);if(!range)return fail(res,400,"Invalid report range");
  const {from,to,start,end}=range,instant={$gte:start,$lt:end},dayRange={$gte:from,$lte:to};
- const [booked,delivered,collected,purchases,expenses]=await Promise.all([
+ const [booked,delivered,collected,purchases,expenses,waste]=await Promise.all([
  Order.find({createdAt:instant,status:{$ne:"cancelled"}}).select("createdAt total").lean(),
  Order.find({approvedAt:instant,status:"delivered"}).select("approvedAt deliveryDate items subtotal deliveryFee total").lean(),
  Order.find({courierDeliveredAt:instant,collectedAmount:{$type:"number"}}).select("courierDeliveredAt collectedAmount approvedAt").lean(),
  Purchase.find({date:dayRange}).lean(),
- Expense.find({date:dayRange,voided:{$ne:true}}).lean()
+ Expense.find({date:dayRange,voided:{$ne:true}}).lean(),
+ InventoryMovement.find({date:dayRange,type:"waste"}).select("date quantity unitCost").lean()
  ]);
  const deliveryDays=[...new Set(delivered.map(o=>o.deliveryDate).filter(validDate))];
  const actualCosts=await Purchase.find({date:{$in:deliveryDays}}).lean();
@@ -27,12 +29,13 @@ router.get("/",async(req,res)=>{
  const snapshots=await OrderCost.find({order:{$in:delivered.map(o=>o._id)}}).lean();
  const snapshotMap=new Map(snapshots.map(s=>[String(s.order),s]));
  const rows=new Map();
- for(let d=from;d<=to;d=shiftDay(d,1))rows.set(d,{date:d,bookedSales:0,bookedOrders:0,realizedRevenue:0,productRevenue:0,deliveryRevenue:0,deliveredOrders:0,cashCollected:0,pendingApprovalCash:0,purchaseSpend:0,operatingExpenses:0,knownEstimatedCogs:0,missingCostLines:0,frozenCostOrders:0,provisionalCostOrders:0});
+ for(let d=from;d<=to;d=shiftDay(d,1))rows.set(d,{date:d,bookedSales:0,bookedOrders:0,realizedRevenue:0,productRevenue:0,deliveryRevenue:0,deliveredOrders:0,cashCollected:0,pendingApprovalCash:0,purchaseSpend:0,operatingExpenses:0,knownEstimatedCogs:0,missingCostLines:0,frozenCostOrders:0,provisionalCostOrders:0,knownWasteCost:0,wasteMovements:0,missingWasteCosts:0});
  const add=(row,key,n)=>{row[key]+=n;};
  for(const o of booked){const r=rows.get(cairoDate(o.createdAt));add(r,"bookedSales",o.total);r.bookedOrders++;}
  for(const o of collected){const r=rows.get(cairoDate(o.courierDeliveredAt));add(r,"cashCollected",o.collectedAmount);if(!o.approvedAt)add(r,"pendingApprovalCash",o.collectedAmount);}
  for(const p of purchases)add(rows.get(p.date),"purchaseSpend",round2(p.quantity*p.unitCost));
  for(const e of expenses)add(rows.get(e.date),"operatingExpenses",e.amount);
+ for(const w of waste){const r=rows.get(w.date);r.wasteMovements++;if(!Number.isFinite(w.unitCost)){r.missingWasteCosts++;continue;}add(r,"knownWasteCost",round2(w.quantity*w.unitCost));}
  for(const o of delivered){
  const r=rows.get(cairoDate(o.approvedAt));r.deliveredOrders++;add(r,"realizedRevenue",o.total);add(r,"productRevenue",o.subtotal);add(r,"deliveryRevenue",o.deliveryFee);
  const snapshot=snapshotMap.get(String(o._id));
@@ -42,7 +45,7 @@ router.get("/",async(req,res)=>{
  }
  const keys=Object.keys(rows.values().next().value).filter(k=>k!=="date");
  const totals=Object.fromEntries(keys.map(k=>[k,0]));
- const finish=r=>{for(const k of keys)r[k]=round2(r[k]);r.estimatedCogs=r.missingCostLines?null:r.knownEstimatedCogs;r.estimatedGrossProfit=r.estimatedCogs===null?null:round2(r.realizedRevenue-r.estimatedCogs);r.estimatedNetProfit=r.estimatedGrossProfit===null?null:round2(r.estimatedGrossProfit-r.operatingExpenses);return r;};
+ const finish=r=>{for(const k of keys)r[k]=round2(r[k]);r.estimatedCogs=r.missingCostLines?null:r.knownEstimatedCogs;r.estimatedGrossProfit=r.estimatedCogs===null?null:round2(r.realizedRevenue-r.estimatedCogs);r.wasteCost=r.missingWasteCosts?null:r.knownWasteCost;r.estimatedNetProfit=r.estimatedGrossProfit===null||r.wasteCost===null?null:round2(r.estimatedGrossProfit-r.operatingExpenses-r.wasteCost);return r;};
  for(const r of rows.values())for(const k of keys)totals[k]+=r[k];
  res.set("Cache-Control","no-store");
  res.json({success:true,from,to,currency:"EGP",costBasis:"estimated_same_scheduled_day_purchase_unit_cost",inventoryCostingComplete:false,legacyDeliveredWithoutApprovalExcluded:true,totals:finish(totals),daily:[...rows.values()].map(finish)});
