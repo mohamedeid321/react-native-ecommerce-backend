@@ -6,8 +6,15 @@ on:
       - 'performance/**'
       - 'src/controllers/order.controller.js'
       - 'src/utils/checkoutGate.js'
+      - 'src/controllers/product.controller.js'
+      - 'src/controllers/search.controller.js'
+      - 'src/controllers/cart.controller.js'
+      - 'src/lib/db.js'
       - '.github/workflows/performance.yml'
   workflow_dispatch:
+concurrency:
+  group: performance-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
@@ -71,7 +78,7 @@ jobs:
       - name: Progressive read benchmark
         if: always() && steps.checkout.outcome != 'skipped'
         run: |
-          for vus in 10 50 100 250; do
+          for vus in 10 50 100 250 500 1000; do
             echo "BENCHMARK_VUS=$vus"
             docker run --rm --network host --user "$(id -u):$(id -g)" -v "$PWD/performance:/perf:ro" -e VUS="$vus" grafana/k6:0.57.0 run /perf/read.k6.js || exit 1
           done
