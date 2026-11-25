@@ -1,4 +1,5 @@
 import Product, { CATEGORY_IDS } from "../models/product.model.js";
+import Category from "../models/category.model.js";
 import cloudinary from "../lib/cloudinary.js";
 import streamifier from "streamifier";
 import mongoose from "mongoose";
@@ -33,7 +34,7 @@ const parseNumber = (value) =>
     : Number(value);
 
 // بيتحقق من القيم اللي اتبعتت بس (الرسائل بالعربي لأنها بتظهر للـ admin)
-const validateFields = ({ price, discount, stock, category }) => {
+const validateFields = async ({ price, discount, stock, category }) => {
   if (price !== undefined && !(Number.isFinite(price) && price > 0)) {
     return "السعر لازم يكون رقم أكبر من صفر";
   }
@@ -49,7 +50,7 @@ const validateFields = ({ price, discount, stock, category }) => {
   ) {
     return "المخزون لازم يكون رقم من صفر فأكتر";
   }
-  if (category !== undefined && !CATEGORY_IDS.includes(category)) {
+  if (category !== undefined && (typeof category !== "string" || (!CATEGORY_IDS.includes(category) && !(await Category.exists({slug:category,isActive:true}))))) {
     return "القسم غير صحيح";
   }
   return null;
@@ -94,7 +95,7 @@ export const createProduct = async (req, res) => {
     // 2. القيم صحيحة
     const purchasePrice = parseNumber(req.body.purchasePrice);
     if (purchasePrice !== undefined && (!Number.isFinite(purchasePrice) || purchasePrice < 0)) return res.status(400).json({message:'Invalid purchase price'});
-    const invalid = validateFields({ price, discount, stock, category });
+    const invalid = await validateFields({ price, discount, stock, category });
     if (invalid) {
       return res.status(400).json({ success: false, message: invalid });
     }
@@ -158,7 +159,7 @@ export const getAllProducts = async (req, res) => {
 
     // الأحدث أولاً مع الفلترة والـ Pagination
     const products = await Product.find(filter)
-      .sort({ createdAt: -1 })
+      .sort(req.query.sort === "price_asc" ? {price:1,_id:1} : req.query.sort === "price_desc" ? {price:-1,_id:1} : {createdAt:-1,_id:-1})
       .skip(skip)
       .limit(limit);
 
@@ -282,7 +283,7 @@ export const updateProduct = async (req, res) => {
     };
 
     if (fields.purchasePrice !== undefined && (!Number.isFinite(fields.purchasePrice) || fields.purchasePrice < 0)) return res.status(400).json({message:'Invalid purchase price'});
-    const invalid = validateFields(fields);
+    const invalid = await validateFields(fields);
     if (invalid) {
       return res.status(400).json({ success: false, message: invalid });
     }
