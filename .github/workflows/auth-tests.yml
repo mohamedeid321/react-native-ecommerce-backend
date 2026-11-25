@@ -37,6 +37,8 @@ jobs:
           done
           exit 1
       - run: npm install --no-audit --no-fund
+      - name: Resolve compatible security patches for lockfile review
+        run: npm audit fix --omit=dev --audit-level=high
       - name: Dependency audit
         run: npm audit --omit=dev --audit-level=high
       - run: find src test scripts -name '*.js' -print0 | xargs -0 -n1 node --check
