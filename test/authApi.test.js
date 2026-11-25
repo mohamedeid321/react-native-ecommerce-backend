@@ -103,6 +103,9 @@ test("web auth HTTP integration",{skip:!process.env.TEST_MONGO_URI || !process.e
    const again=await call("/web/google",{credential:"new"});
    assert.equal(again.status,200);
    assert.equal((await again.json()).profileIncomplete,false);
+   await User.updateOne({email:"google@example.com"},{$set:{disabled:true}});
+   assert.equal((await call("/web/google",{credential:"new"})).status,403);
+   assert.equal((await call("/web/me",undefined,cookies(again))).status,401);
   } finally { OAuth2Client.prototype.verifyIdToken=original; }
   const oldEnv=process.env.NODE_ENV;
   process.env.NODE_ENV="production";
