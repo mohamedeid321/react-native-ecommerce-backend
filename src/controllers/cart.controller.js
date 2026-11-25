@@ -140,3 +140,37 @@ export const clearCart = async (req, res) => {
     serverError(res, error, "clearCart");
   }
 };
+
+ // Merge guest quantities by maximum rather than addition so retries are idempotent.
+export const mergeGuestCart = async (req,res) => {
+ try {
+  const lines=req.body?.items;
+  if(!Array.isArray(lines)||lines.length>100) return fail(res,400,"Invalid guest cart");
+  const requested=new Map();
+  for(const line of lines){
+   const quantity=parseQuantity(line?.quantity);
+   if(typeof line?.productId!=="string"||!isValidId(line.productId)||quantity===null) return fail(res,400,"Invalid cart item");
+   const id=line.productId.toLowerCase();
+   requested.set(id,Math.max(requested.get(id)||0,quantity));
+  }
+  const cart=await getCartDoc(req.user._id);
+  const products=await Product.find({_id:{$in:[...requested.keys()]},isActive:{$ne:false}});
+  const byId=new Map(products.map(p=>[String(p._id),p]));
+  const adjustments=[];
+  for(const [id,quantity] of requested){
+   const product=byId.get(id);
+   if(!product){adjustments.push({productId:id,reason:"unavailable"});continue;}
+   const existing=cart.items.find(i=>String(i.product)===id);
+   const desired=Math.max(existing?.quantity||0,quantity);
+   const accepted=Math.floor(Math.min(desired,product.stock,MAX_QTY)*1000+1e-8)/1000;
+   if(accepted<desired)adjustments.push({productId:id,reason:"stock",quantity:accepted});
+   if(accepted<0.001){cart.items=cart.items.filter(i=>String(i.product)!==id);continue;}
+   if(existing)existing.quantity=accepted;else cart.items.push({product:product._id,quantity:accepted});
+  }
+  await cart.save();
+  res.json({success:true,cart:await buildCartResponse(cart),adjustments});
+ }catch(error){
+  if(error.name==="VersionError"||error.code===11000)return fail(res,409,"السلة اتغيرت، حاول مرة أخرى");
+  serverError(res,error,"mergeGuestCart");
+ }
+};
