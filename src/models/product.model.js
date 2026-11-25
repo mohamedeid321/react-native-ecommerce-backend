@@ -32,6 +32,8 @@ const productSchema = new mongoose.Schema(
       required: [true, "price is required"],
     },
     // نسبة الخصم % (السعر بعد الخصم بيتحسب في finalPrice)
+    purchasePrice: { type: Number, min: 0, select: false },
+    isActive: { type: Boolean, default: true },
     discount: {
       type: Number,
       min: 0,
@@ -95,6 +97,9 @@ productSchema.virtual("finalPrice").get(function () {
   const discount = this.discount || 0;
   return Math.round(this.price * (1 - discount / 100) * 100) / 100;
 });
+
+productSchema.index({ isActive: 1, category: 1, createdAt: -1 });
+productSchema.set("toJSON", { virtuals: true, transform(doc, ret) { delete ret.purchasePrice; return ret; } });
 
 const Product = mongoose.model("Product", productSchema);
 
