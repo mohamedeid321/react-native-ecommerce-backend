@@ -29,12 +29,12 @@ return s.userId
 
 export function createSessionStore(redis) {
   return {
-    async create(userId) {
+    async create(userId, mfaVerified = false) {
       const sessionId = newSessionId();
       const refreshToken = newRefreshToken(sessionId);
       const { hash } = parseRefreshToken(refreshToken);
       const generation = await redis.get(generationKey(userId)) || "0";
-      const result = await redis.set(key(sessionId), JSON.stringify({ userId: String(userId), hash, generation }), "EX", REFRESH_SECONDS, "NX");
+      const result = await redis.set(key(sessionId), JSON.stringify({ userId: String(userId), hash, generation, mfaVerified: mfaVerified === true }), "EX", REFRESH_SECONDS, "NX");
       if (result !== "OK") throw new Error("Session creation failed");
       return { sessionId, refreshToken };
     },
@@ -46,11 +46,11 @@ export function createSessionStore(redis) {
       if (!/^[a-f0-9]{24}$/i.test(String(result))) return null;
       return { userId: String(result), sessionId: parsed.sessionId, refreshToken };
     },
-    async active(sessionId, userId) {
+    async active(sessionId, userId, requireMfa = false) {
       const raw = await redis.get(key(sessionId));
       if (!raw) return false;
       const session = JSON.parse(raw);
-      return session.userId === String(userId) && (session.generation || "0") === (await redis.get(generationKey(userId)) || "0");
+      return (!requireMfa || session.mfaVerified === true) && session.userId === String(userId) && (session.generation || "0") === (await redis.get(generationKey(userId)) || "0");
     },
     async revokeAll(userId) { await redis.incr(generationKey(userId)); },
     async revoke(sessionId) { await redis.del(key(sessionId)); }
