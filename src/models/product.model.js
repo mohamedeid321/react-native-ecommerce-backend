@@ -53,10 +53,8 @@ const productSchema = new mongoose.Schema(
     category: {
       type: String,
       required: [true, "category is required"],
-      enum: {
-        values: CATEGORY_IDS,
-        message: "category is not valid",
-      },
+      match: /^[a-z0-9]+(?:-[a-z0-9]+)*$/,
+      maxlength: 64,
     },
     isFeatured: {
       type: Boolean,
