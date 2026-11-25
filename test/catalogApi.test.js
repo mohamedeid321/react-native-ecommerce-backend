@@ -6,6 +6,8 @@ import cloudinary from "../src/lib/cloudinary.js";
 import cartRoutes from "../src/routes/cartRoutes.js";
 import orderRoutes from "../src/routes/orderRoutes.js";
 import financeRoutes from "../src/routes/financeRoutes.js";
+import settingsRoutes from "../src/routes/settingsRoutes.js";
+import {ShopSettings} from "../src/models/shopSettings.model.js";
 import adminRoutes from "../src/routes/adminRoutes.js";
 import inventoryRoutes from "../src/routes/inventoryRoutes.js";
 import InventoryMovement from "../src/models/inventoryMovement.model.js";
@@ -32,8 +34,8 @@ test("catalog HTTP integration",{skip:!process.env.TEST_MONGO_URI||!process.env.
  process.env.REDIS_URL=process.env.TEST_REDIS_URL;
  process.env.JWT_ACCESS_SECRET=randomBytes(32).toString("hex");
  await mongoose.connect(process.env.TEST_MONGO_URI,{dbName:"lotta_catalog_test_"+randomBytes(8).toString("hex")});
- await Promise.all([User.init(),Product.init(),Category.init(),Order.init(),Cart.init(),Purchase.init(),Expense.init(),OrderCost.init(),InventoryMovement.init()]);
- const app=express();app.use(express.json());app.use("/products",products);app.use("/categories",categories);app.use("/cart",cartRoutes);app.use("/orders",orderRoutes);app.use("/purchases",purchaseRoutes);app.use("/finance",financeRoutes);app.use("/inventory",inventoryRoutes);app.use("/admin",adminRoutes);
+ await Promise.all([User.init(),Product.init(),Category.init(),Order.init(),Cart.init(),Purchase.init(),Expense.init(),OrderCost.init(),InventoryMovement.init(),ShopSettings.init()]);
+ const app=express();app.use(express.json());app.use("/products",products);app.use("/categories",categories);app.use("/cart",cartRoutes);app.use("/orders",orderRoutes);app.use("/purchases",purchaseRoutes);app.use("/finance",financeRoutes);app.use("/inventory",inventoryRoutes);app.use("/admin",adminRoutes);app.use("/settings",settingsRoutes);
  const server=app.listen(0);await new Promise(r=>server.once("listening",r));
  const base="http://127.0.0.1:"+server.address().port;
  const call=(path,method="GET",body,cookie="")=>fetch(base+path,{method,headers:{"Content-Type":"application/json",Cookie:cookie},body:body===undefined?undefined:JSON.stringify(body)});
@@ -312,6 +314,29 @@ test("catalog HTTP integration",{skip:!process.env.TEST_MONGO_URI||!process.env.
  assert.equal((await call(expenseUrl+"/"+expense._id+"/void","PATCH",{},adminCookie)).status,200);
  assert.equal((await call(expenseUrl+"/"+expense._id+"/void","PATCH",{},adminCookie)).status,409);
  assert.equal((await (await call("/finance","GET",undefined,adminCookie)).json()).totals.operatingExpenses,0);
+ const defaults=(await (await call("/settings")).json()).settings;
+ assert.equal(defaults.deliveryFee,30);assert.equal(defaults.freeDeliveryThreshold,700);assert.equal(defaults.cutoffHour,22);
+ assert.equal((await call("/settings","PATCH",{deliveryFee:40},customerCookie)).status,403);
+ assert.equal((await call("/settings","PATCH",{cutoffHour:24},adminCookie)).status,400);
+ assert.equal((await call("/settings","PATCH",{deliveryFee:-1},adminCookie)).status,400);
+ assert.equal((await call("/settings","PATCH",{deliveryAreas:[{city:CITIES[0],neighborhoods:[0]}]},adminCookie)).status,400);
+ assert.equal((await call("/settings","PATCH",{acceptingOrders:false,deliveryFee:40,freeDeliveryThreshold:800,firstOrderFree:false,cutoffHour:20},adminCookie)).status,200);
+ assert.equal((await checkout("checkout-settings-closed-005")).status,409);
+ assert.equal((await checkout(key)).status,200);
+ const settingsCart=await (await call("/cart","GET",undefined,customerCookie)).json();
+ assert.equal(settingsCart.cart.deliveryFee,40);
+ assert.equal((await call("/settings","PATCH",{acceptingOrders:true,deliveryAreas:[{city:CITIES[0],neighborhoods:[28]}]},adminCookie)).status,200);
+ assert.equal((await checkout("checkout-settings-area-006")).status,400);
+ assert.equal(await Order.countDocuments({user:user._id}),3);
+ assert.equal((await call("/settings","PATCH",{deliveryAreas:[{city:CITIES[0],neighborhoods:[1,28]}]},adminCookie)).status,200);
+ assert.equal((await call("/cart/"+orange._id,"PUT",{quantity:1},customerCookie)).status,200);
+ const settingsOrder=await checkout("checkout-settings-open-007");
+ assert.equal(settingsOrder.status,201);
+ assert.equal((await settingsOrder.json()).order.deliveryFee,40);
+ assert.equal((await Order.findById(order._id)).deliveryFee,0);
+ const persisted=(await (await call("/settings")).json()).settings;
+ assert.equal(persisted.cutoffHour,20);assert.equal(persisted.acceptingOrders,true);assert.equal(persisted.firstOrderFree,false);
+
 
 
 
