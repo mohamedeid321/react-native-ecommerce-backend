@@ -265,6 +265,19 @@ test("catalog HTTP integration",{skip:!process.env.TEST_MONGO_URI||!process.env.
  const adjusted=await inventoryReport(day);assert.equal(adjusted.physicalBalance,1.5);
  const movements=await (await call("/inventory/movements?date="+today,"GET",undefined,adminCookie)).json();
  assert.equal(movements.count,2);
+ const withWaste=await (await call("/finance?range=day","GET",undefined,adminCookie)).json();
+ assert.equal(withWaste.totals.wasteCost,7.5);
+ assert.equal(withWaste.totals.wasteMovements,1);
+ assert.equal(withWaste.totals.missingWasteCosts,0);
+ assert.equal(withWaste.totals.estimatedCogs,15.75);
+ assert.equal(withWaste.totals.estimatedNetProfit,-1.25);
+ assert.equal((await move("inventory-unknown-waste-003",{date:today,product:mango._id,type:"waste",quantity:0.1,reason:"Unknown cost"})).status,201);
+ const incomplete=await (await call("/finance?range=day","GET",undefined,adminCookie)).json();
+ assert.equal(incomplete.totals.knownWasteCost,7.5);
+ assert.equal(incomplete.totals.missingWasteCosts,1);
+ assert.equal(incomplete.totals.wasteCost,null);
+ assert.equal(incomplete.totals.estimatedNetProfit,null);
+
 
 
  assert.equal((await call(expenseUrl+"/"+expense._id+"/void","PATCH",{},adminCookie)).status,200);
