@@ -1,0 +1,32 @@
+name: Authentication tests
+on:
+  push:
+    branches: [develop/lotta-web-backend]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  auth:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
+    env:
+      TEST_REDIS_URL: redis://127.0.0.1:6379
+      TEST_MONGO_URI: mongodb://127.0.0.1:27017/lotta_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-audit --no-fund
+      - run: find src test -name '*.js' -exec node --check {} \;
+      - run: npm test
