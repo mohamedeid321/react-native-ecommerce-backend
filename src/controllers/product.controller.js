@@ -1,3 +1,4 @@
+import {publicCache} from "../lib/publicCache.js";
 import {createSingleFlight} from "../utils/singleFlight.js";
 import Product, { CATEGORY_IDS } from "../models/product.model.js";
 import Category from "../models/category.model.js";
@@ -133,6 +134,7 @@ export const createProduct = async (req, res) => {
       detailImage: detailImageUrl,
     });
 
+    await publicCache.invalidate("catalog","search");
     return res.status(201).json({
       success: true,
       message: "Product created successfully",
@@ -161,10 +163,11 @@ export const getAllProducts = async (req, res) => {
 
     // الأحدث أولاً مع الفلترة والـ Pagination
     const sort=req.query.sort==="price_asc"?"price_asc":req.query.sort==="price_desc"?"price_desc":"latest";
-    const [products,totalProducts]=await listFlight(JSON.stringify([category??"all",page,limit,sort]),()=>Promise.all([
+    const key=JSON.stringify([category??"all",page,limit,sort]);
+    const [products,totalProducts]=await listFlight(key,()=>publicCache.read("catalog",key,5000,async()=>{const [docs,total]=await Promise.all([
       Product.find(filter).sort(sort==="price_asc"?{price:1,_id:1}:sort==="price_desc"?{price:-1,_id:1}:{createdAt:-1,_id:-1}).skip(skip).limit(limit),
       Product.countDocuments(filter),
-    ]));
+    ]);return [docs.map(p=>p.toJSON()),total];}));
 
     return res.status(200).json({
       success: true,
@@ -312,6 +315,7 @@ export const updateProduct = async (req, res) => {
     }
 
     const updated = await product.save();
+    await publicCache.invalidate("catalog","search");
     await Promise.all(oldUrls.map(deleteCloudinaryImage));
 
     res.json({
@@ -338,6 +342,7 @@ export const deleteProduct = async (req, res) => {
 
     product.isActive = false;
     await product.save();
+    await publicCache.invalidate("catalog","search");
 
     res.json({ message: "Product deleted successfully" });
   } catch (error) {
@@ -357,6 +362,7 @@ export const toggleFeaturedProduct = async (req, res) => {
     }
     product.isFeatured = !product.isFeatured;
     const updatedProduct = await product.save();
+    await publicCache.invalidate("catalog","search");
     res.json(updatedProduct);
   } catch (error) {
     console.log("Error in toggleFeaturedProduct controller", error.message);
