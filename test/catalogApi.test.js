@@ -5,6 +5,9 @@ import {Writable} from "node:stream";
 import cloudinary from "../src/lib/cloudinary.js";
 import cartRoutes from "../src/routes/cartRoutes.js";
 import orderRoutes from "../src/routes/orderRoutes.js";
+import financeRoutes from "../src/routes/financeRoutes.js";
+import Expense from "../src/models/expense.model.js";
+import {cairoDate} from "../src/utils/financeDates.js";
 import purchaseRoutes from "../src/routes/purchaseRoutes.js";
 import Purchase from "../src/models/purchase.model.js";
 import Order from "../src/models/order.model.js";
@@ -25,8 +28,8 @@ test("catalog HTTP integration",{skip:!process.env.TEST_MONGO_URI||!process.env.
  process.env.REDIS_URL=process.env.TEST_REDIS_URL;
  process.env.JWT_ACCESS_SECRET=randomBytes(32).toString("hex");
  await mongoose.connect(process.env.TEST_MONGO_URI,{dbName:"lotta_catalog_test_"+randomBytes(8).toString("hex")});
- await Promise.all([User.init(),Product.init(),Category.init(),Order.init(),Cart.init(),Purchase.init()]);
- const app=express();app.use(express.json());app.use("/products",products);app.use("/categories",categories);app.use("/cart",cartRoutes);app.use("/orders",orderRoutes);app.use("/purchases",purchaseRoutes);
+ await Promise.all([User.init(),Product.init(),Category.init(),Order.init(),Cart.init(),Purchase.init(),Expense.init()]);
+ const app=express();app.use(express.json());app.use("/products",products);app.use("/categories",categories);app.use("/cart",cartRoutes);app.use("/orders",orderRoutes);app.use("/purchases",purchaseRoutes);app.use("/finance",financeRoutes);
  const server=app.listen(0);await new Promise(r=>server.once("listening",r));
  const base="http://127.0.0.1:"+server.address().port;
  const call=(path,method="GET",body,cookie="")=>fetch(base+path,{method,headers:{"Content-Type":"application/json",Cookie:cookie},body:body===undefined?undefined:JSON.stringify(body)});
@@ -204,6 +207,28 @@ test("catalog HTTP integration",{skip:!process.env.TEST_MONGO_URI||!process.env.
  const actual=report.items.find(i=>i.product===mango._id);
  assert.equal(actual.actualCost,42);assert.equal(actual.variance,0.25);assert.equal(actual.recorded,true);
  assert.equal(report.totals.actualCost,42);
+ const today=cairoDate();
+ const expenseUrl="/finance/expenses";
+ assert.equal((await call("/finance","GET",undefined,customerCookie)).status,403);
+ assert.equal((await call(expenseUrl,"POST",{date:today,category:"transport",amount:5,description:"Fuel"},customerCookie)).status,403);
+ assert.equal((await call(expenseUrl,"POST",{date:today,category:"transport",amount:-5,description:"Fuel"},adminCookie)).status,400);
+ assert.equal((await call("/finance?range=custom&from=2026-02-30&to=2026-03-01","GET",undefined,adminCookie)).status,400);
+ const createdExpense=await call(expenseUrl,"POST",{date:today,category:"transport",amount:5,description:"Fuel"},adminCookie);
+ assert.equal(createdExpense.status,201);
+ const expense=(await createdExpense.json()).expense;
+ const finance=await (await call("/finance?range=day","GET",undefined,adminCookie)).json();
+ assert.equal(finance.totals.realizedRevenue,order.total);
+ assert.equal(finance.totals.deliveredOrders,1);
+ assert.equal(finance.totals.cashCollected,order.total);
+ assert.equal(finance.totals.pendingApprovalCash,0);
+ assert.equal(finance.totals.estimatedCogs,15.75);
+ assert.equal(finance.totals.operatingExpenses,5);
+ assert.equal(finance.totals.estimatedNetProfit,6.25);
+ assert.equal(finance.inventoryCostingComplete,false);
+ assert.equal((await call(expenseUrl+"/"+expense._id+"/void","PATCH",{},adminCookie)).status,200);
+ assert.equal((await call(expenseUrl+"/"+expense._id+"/void","PATCH",{},adminCookie)).status,409);
+ assert.equal((await (await call("/finance","GET",undefined,adminCookie)).json()).totals.operatingExpenses,0);
+
 
 
 
