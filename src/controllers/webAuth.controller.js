@@ -39,7 +39,7 @@ export async function webLogin(req,res) {
     if (!user.mfaSecret) return res.status(403).json({message:"Admin MFA enrollment required"});
     if (!(await checkAdminCode(user,req.body.code))) return res.status(401).json({message:"MFA code required or invalid"});
   }
-  const session = await store().create(user.id);
+  const session = await store().create(user.id, user.role === "admin");
   setAuthCookies(res, signAccessToken(user.id, session.sessionId), session.refreshToken);
   return res.json({user:publicUser(user)});
 }
@@ -47,7 +47,7 @@ export async function webRefresh(req,res) {
   const session = await store().rotate(readCookie(req,"lotta_refresh"));
   if (!session) { clearAuthCookies(res); return res.status(401).json({message:"Session expired"}); }
   const user = await User.findById(session.userId);
-  if (!user) { await store().revoke(session.sessionId); clearAuthCookies(res); return res.status(401).json({message:"Session expired"}); }
+  if (!user || (user.role === "admin" && !(await store().active(session.sessionId,user.id,true)))) { await store().revoke(session.sessionId); clearAuthCookies(res); return res.status(401).json({message:"Session expired"}); }
   setAuthCookies(res,signAccessToken(user.id,session.sessionId),session.refreshToken);
   return res.json({user:publicUser(user)});
 }
