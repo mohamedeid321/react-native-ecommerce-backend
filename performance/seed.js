@@ -1,0 +1,31 @@
+import mongoose from "mongoose";
+import bcrypt from "bcryptjs";
+import {writeFile} from "node:fs/promises";
+import User from "../src/models/user.model.js";
+import Product from "../src/models/product.model.js";
+import Cart from "../src/models/cart.model.js";
+import Order from "../src/models/order.model.js";
+import Counter from "../src/models/counter.model.js";
+import DeliveryInfo from "../src/models/deliveryInfo.model.js";
+import {CITIES} from "../src/config/shop.js";
+import {getRedis} from "../src/lib/redis.js";
+import {createSessionStore} from "../src/lib/sessionStore.js";
+import {signAccessToken} from "../src/utils/sessionTokens.js";
+const mongo="mongodb://127.0.0.1:27017/lotta_performance";
+if(process.env.MONGO_URI!==mongo||process.env.REDIS_URL!=="redis://127.0.0.1:6379"||process.env.CI!=="true")throw Error("Isolated CI services only");
+await mongoose.connect(mongo);
+try{
+ await Promise.all([User.init(),Product.init(),Cart.init(),Order.init(),Counter.init(),DeliveryInfo.init()]);
+ if(await User.exists({})||await Product.exists({})||await Order.exists({}))throw Error("Performance database must be empty");
+ const products=await Product.insertMany(Array.from({length:300},(_,i)=>({name:"Test fruit "+i,description:"Synthetic test fruit apple orange",price:30,unit:"kg",category:"fruits",image:"https://example.invalid/fruit.png",stock:i===0?30:1000})));
+ const password="Synthetic-performance-only-2026";
+ const hash=await bcrypt.hash(password,10);
+ const users=await User.insertMany(Array.from({length:250},(_,i)=>({username:"Perf customer "+i,email:"perf-"+i+"@example.invalid",phone:"+2010"+String(i).padStart(8,"0"),password:hash,role:"customer"})));
+ await Cart.insertMany(users.map(u=>({user:u._id,items:[{product:products[0]._id,quantity:1}]})));
+ await DeliveryInfo.insertMany(users.map(u=>({user:u._id,city:CITIES[0],neighborhood:28,building:"1",apartment:"1",floor:"1",phone1:"01000000000"})));
+ await Counter.create({_id:"order",seq:100000});
+ const store=createSessionStore(getRedis());
+ const accounts=await Promise.all(users.map(async u=>{const s=await store.create(u.id);return {id:u.id,email:u.email,access:signAccessToken(u.id,s.sessionId)};}));
+ await writeFile("performance/fixture.json",JSON.stringify({accounts,password,productId:products[0].id}),{mode:0o600});
+ console.log("Seeded 300 products, 250 customers, checkout stock 30");
+}finally{await mongoose.disconnect();await getRedis().quit();}
