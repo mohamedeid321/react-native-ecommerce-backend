@@ -1,3 +1,4 @@
+import {publicCache} from "../lib/publicCache.js";
 import {createSingleFlight} from "../utils/singleFlight.js";
 import Product from "../models/product.model.js";
 import { buildSearchFilter } from "../utils/search.js";
@@ -19,7 +20,8 @@ export const searchProducts = async (req, res) => {
     const page = Math.min(10000,Math.max(parseInt(req.query.page) || 1, 1));
     const limit = Math.min(Math.max(parseInt(req.query.limit) || 10, 1), 30);
 
-    const products = await searchFlight(JSON.stringify([query,filter.category??"all",page,limit]),()=>Product.find(filter).sort({createdAt:-1}).skip((page-1)*limit).limit(limit));
+    const key=JSON.stringify([query,filter.category??"all",page,limit]);
+    const products = await searchFlight(key,()=>publicCache.read("search",key,5000,async()=> (await Product.find(filter).sort({createdAt:-1}).skip((page-1)*limit).limit(limit)).map(p=>p.toJSON())));
 
     res.json({
       success: true,
