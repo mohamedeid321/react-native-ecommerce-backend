@@ -1,0 +1,99 @@
+name: 1000-user one-hour stability
+on:
+  push:
+    branches: [develop/lotta-web-backend]
+    paths:
+      - '.github/workflows/soak-performance.yml'
+  workflow_dispatch:
+concurrency:
+  group: soak-1000
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 80
+    services:
+      redis:
+        image: redis:7
+        ports: ['6379:6379']
+        options: --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      MONGO_URI: mongodb://127.0.0.1:27017/lotta_performance
+      REDIS_URL: redis://127.0.0.1:6379
+      CLIENT_URL: http://localhost:5173
+      NODE_ENV: test
+      PUBLIC_CACHE_ENABLED: '1'
+      PUBLIC_CACHE_NAMESPACE: soak
+      PORT: 3000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --no-audit --no-fund
+      - name: Start isolated Mongo replica set
+        run: |
+          docker run -d --name lotta-perf-mongo -p 27017:27017 mongo:7 --replSet rs0 --bind_ip_all
+          for i in $(seq 1 30); do
+            if docker exec lotta-perf-mongo mongosh --quiet --eval 'db.adminCommand({ping:1}).ok' | grep -q 1; then break; fi
+            sleep 2
+          done
+          docker exec lotta-perf-mongo mongosh --quiet --eval 'rs.initiate({_id:"rs0",members:[{_id:0,host:"127.0.0.1:27017"}]})'
+          for i in $(seq 1 30); do
+            if docker exec lotta-perf-mongo mongosh --quiet --eval 'db.hello().isWritablePrimary' | grep -q true; then exit 0; fi
+            sleep 2
+          done
+          exit 1
+      - name: Generate disposable fixture and start API
+        run: |
+          echo "JWT_ACCESS_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+      - name: Seed disposable fixture
+        run: |
+          node performance/seed.js
+          node performance/mixed-fixture.js prepare
+      - name: Start full Express app
+        run: |
+          node src/index.js > /tmp/lotta-perf-api.log 2>&1 &
+          echo $! > /tmp/lotta-perf-api.pid
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3000/api/health/ready; then exit 0; fi
+            sleep 1
+          done
+          exit 1
+      - name: Pull k6
+        run: docker pull grafana/k6:0.57.0
+      - name: Run mixed 1000-user shopping benchmark
+        id: mixed
+        run: docker run --rm --network host --user "$(id -u):$(id -g)" -v "$PWD/performance:/perf:ro" grafana/k6:0.57.0 run /perf/mixed.k6.js
+      - name: Verify completed orders and stock
+        if: always() && steps.mixed.outcome != 'skipped'
+        run: node performance/mixed-fixture.js verify
+      - name: Sustain mixed reads and cart writes for 60 minutes
+        if: success()
+        run: |
+          (
+            while true; do
+              echo "SOAK_RESOURCE $(date -u +%FT%TZ)"
+              ps -p "$(cat /tmp/lotta-perf-api.pid)" -o pid,%cpu,rss,etime
+              docker stats --no-stream --format '{{.Name}} CPU={{.CPUPerc}} memory={{.MemUsage}}' lotta-perf-mongo
+              sleep 60
+            done
+          ) &
+          monitor=$!
+          trap 'kill "$monitor" 2>/dev/null || true' EXIT
+          for segment in 1 2 3 4 5 6; do
+            echo "SOAK_SEGMENT=$segment"
+            node performance/renew-fixture.js
+            docker run --rm --network host --user "$(id -u):$(id -g)" -v "$PWD/performance:/perf:ro" grafana/k6:0.57.0 run /perf/soak.k6.js || exit 1
+          done
+      - name: Reconcile orders and stock after sustained traffic
+        if: always() && steps.mixed.outcome == 'success'
+        run: node performance/mixed-fixture.js verify
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -f performance/fixture.json
+          if [ -f /tmp/lotta-perf-api.pid ]; then kill "$(cat /tmp/lotta-perf-api.pid)" || true; fi
+          docker rm -f lotta-perf-mongo || true
