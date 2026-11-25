@@ -1,13 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import express from "express";
+import cors from "cors";
 import { OAuth2Client } from "google-auth-library";
 import mongoose from "mongoose";
 import { authenticator } from "otplib";
 import { randomBytes } from "node:crypto";
 import User from "../src/models/user.model.js";
 import routes from "../src/routes/authRoutes.js";
-import { browserSecurity } from "../src/middleware/browserSecurity.js";
+import { browserSecurity, corsOptions } from "../src/middleware/browserSecurity.js";
 import { getRedis } from "../src/lib/redis.js";
 import { encryptTotp } from "../src/utils/adminTotp.js";
 test("web auth HTTP integration",{skip:!process.env.TEST_MONGO_URI || !process.env.TEST_REDIS_URL,timeout:60000},async()=>{
@@ -19,7 +20,7 @@ test("web auth HTTP integration",{skip:!process.env.TEST_MONGO_URI || !process.e
  await mongoose.connect(process.env.TEST_MONGO_URI,{dbName});
  await User.init();
  const app=express();
- app.use(browserSecurity,express.json());
+ app.use(cors(corsOptions),browserSecurity,express.json());
  app.use("/api/auth",routes);
  const server=app.listen(0);
  await new Promise(resolve=>server.once("listening",resolve));
@@ -27,6 +28,11 @@ test("web auth HTTP integration",{skip:!process.env.TEST_MONGO_URI || !process.e
  const call=(path,body,cookie="",origin="http://localhost:5173",csrf="1")=>fetch(base+path,{method:body===undefined?"GET":"POST",headers:{"Content-Type":"application/json",Origin:origin,"X-Lotta-CSRF":csrf,Cookie:cookie},body:body===undefined?undefined:JSON.stringify(body)});
  const cookies=r=>r.headers.getSetCookie().map(x=>x.split(";")[0]).join("; ");
  try {
+  const preflight=await fetch(base+"/web/login",{method:"OPTIONS",headers:{Origin:"http://localhost:5173","Access-Control-Request-Method":"POST","Access-Control-Request-Headers":"X-Lotta-CSRF"}});
+  assert.equal(preflight.headers.get("access-control-allow-origin"),"http://localhost:5173");
+  assert.equal(preflight.headers.get("access-control-allow-credentials"),"true");
+  const blocked=await fetch(base+"/web/me",{headers:{Origin:"https://evil.example"}});
+  assert.equal(blocked.headers.get("access-control-allow-origin"),null);
   const details={username:"Test Customer",email:"test@example.com",phone:"01012345678",password:"Test-password-123"};
   assert.equal((await call("/web/register",details,"","https://evil.example")).status,403);
   assert.equal((await call("/web/register",details,"","http://localhost:5173","")).status,403);
@@ -49,6 +55,17 @@ test("web auth HTTP integration",{skip:!process.env.TEST_MONGO_URI || !process.e
   assert.equal((await call("/web/me",undefined,cookies(promoted))).status,403);
   assert.equal((await call("/web/refresh",{},cookies(promoted))).status,401);
   await User.updateOne({email:details.email},{$set:{role:"customer"}});
+  process.env.MFA_ENROLLMENT_TOKEN=randomBytes(32).toString("hex");
+  await User.create({username:"Enroll Admin",email:"enroll@example.com",password:details.password,role:"admin"});
+  const enrollment={email:"enroll@example.com",password:details.password,enrollmentToken:process.env.MFA_ENROLLMENT_TOKEN};
+  assert.equal((await call("/web/admin/mfa/enroll",{...enrollment,enrollmentToken:"wrong"})).status,403);
+  const enrolled=await call("/web/admin/mfa/enroll",enrollment);
+  assert.equal(enrolled.status,200);
+  const uri=(await enrolled.json()).uri;
+  const enrollmentSecret=new URL(uri).searchParams.get("secret");
+  assert.equal((await call("/web/admin/mfa/confirm",{...enrollment,code:"invalid"})).status,400);
+  assert.equal((await call("/web/admin/mfa/confirm",{...enrollment,code:authenticator.generate(enrollmentSecret)})).status,204);
+  assert.equal((await call("/web/admin/mfa/enroll",enrollment)).status,409);
   const secret=authenticator.generateSecret();
   await User.create({username:"Admin test",email:"admin@example.com",password:details.password,role:"admin",mfaSecret:encryptTotp(secret)});
   const admin={identifier:"admin@example.com",password:details.password};
@@ -68,6 +85,12 @@ test("web auth HTTP integration",{skip:!process.env.TEST_MONGO_URI || !process.e
    assert.equal((await call("/web/google",{credential:"invalid"})).status,401);
    assert.equal((await call("/web/google",{credential:"unverified"})).status,401);
    assert.equal((await call("/web/google",{credential:"existing"})).status,409);
+   const existingLogin=await call("/web/login",{identifier:details.email,password:details.password});
+   assert.equal(existingLogin.status,200);
+   assert.equal((await call("/web/google/link",{credential:"existing",password:"wrong"},cookies(existingLogin))).status,401);
+   assert.equal((await call("/web/google/link",{credential:"new",password:details.password},cookies(existingLogin))).status,403);
+   assert.equal((await call("/web/google/link",{credential:"existing",password:details.password},cookies(existingLogin))).status,204);
+   assert.equal((await call("/web/google",{credential:"existing"})).status,200);
    const google=await call("/web/google",{credential:"new"});
    assert.equal(google.status,200);
    const profile=await google.json();
@@ -78,6 +101,16 @@ test("web auth HTTP integration",{skip:!process.env.TEST_MONGO_URI || !process.e
    assert.equal(again.status,200);
    assert.equal((await again.json()).profileIncomplete,false);
   } finally { OAuth2Client.prototype.verifyIdToken=original; }
+  const oldEnv=process.env.NODE_ENV;
+  process.env.NODE_ENV="production";
+  try {
+   const secure=await call("/web/login",{identifier:details.email,password:details.password});
+   assert.equal(secure.status,200);
+   assert.equal(secure.headers.getSetCookie().length,2);
+   assert.ok(secure.headers.getSetCookie().every(x=>/; Secure/i.test(x)&&/; HttpOnly/i.test(x)&&!/; Domain=/i.test(x)));
+   assert.equal((await call("/web/logout",{},cookies(secure))).status,204);
+   assert.equal((await call("/web/me",undefined,cookies(secure))).status,401);
+  } finally { if(oldEnv===undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV=oldEnv; }
   let last;
   for(let i=0;i<21;i++) last=await call("/web/login",{identifier:"none@example.com",password:"wrong"});
   assert.equal(last.status,429);
