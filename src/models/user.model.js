@@ -13,6 +13,7 @@ const userSchema = new mongoose.Schema(
       required: [true, "email is required"],
       unique: true,
     },
+    mfaSecret: { type: String, select: false },
     googleSub: { type: String, unique: true, sparse: true, select: false },
     displayName: { type: String, maxlength: 80 },
     phone: { type: String, unique: true, sparse: true },
