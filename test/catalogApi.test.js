@@ -147,6 +147,43 @@ test("catalog HTTP integration",{skip:!process.env.TEST_MONGO_URI||!process.env.
  assert.equal((await Product.findById(orange._id)).stock,1);
  assert.equal(await Order.countDocuments({user:user._id}),3);
  assert.equal((await Cart.findOne({user:user._id})).items.length,2);
+ // Courier authorization and two-step COD delivery.
+ const details={username:"Courier A",email:"courier-a@example.com",phone:"+201012345678",password:"Test-password-123"};
+ assert.equal((await call("/orders/couriers","POST",details,customerCookie)).status,403);
+ const createdCourier=await call("/orders/couriers","POST",details,adminCookie);
+ assert.equal(createdCourier.status,201);
+ const courierA=await User.findById((await createdCourier.json()).courier.id);
+ const courierB=await User.create({username:"Courier B",email:"courier-b@example.com",password:"Test-password-123",role:"delivery"});
+ const ca=await cookie(courierA,false),cb=await cookie(courierB,false);
+ const op="/orders/"+order._id;
+ assert.equal((await call(op+"/assign","PATCH",{courierId:courierA.id},customerCookie)).status,403);
+ assert.equal((await call(op+"/assign","PATCH",{courierId:courierA.id},adminCookie)).status,200);
+ assert.equal((await call(op+"/status","PATCH",{status:"preparing"},adminCookie)).status,200);
+ assert.equal((await call(op+"/status","PATCH",{status:"out_for_delivery"},adminCookie)).status,200);
+ assert.equal((await call(op+"/approve-delivery","PATCH",{},adminCookie)).status,409);
+ assert.equal((await call(op+"/status","PATCH",{status:"delivered"},adminCookie)).status,400);
+ assert.equal((await (await call("/orders/courier/my?date="+order.deliveryDate,"GET",undefined,ca)).json()).orders.length,1);
+ assert.equal((await (await call("/orders/courier/my?date="+order.deliveryDate,"GET",undefined,cb)).json()).orders.length,0);
+ assert.equal((await call("/orders/courier/my","GET",undefined,customerCookie)).status,403);
+ assert.equal((await call(op+"/report-delivered","PATCH",{collectedAmount:order.total},cb)).status,409);
+ assert.equal((await call(op+"/report-delivered","PATCH",{collectedAmount:0},ca)).status,409);
+ assert.equal((await call(op+"/report-delivered","PATCH",{collectedAmount:order.total},ca)).status,200);
+ assert.equal((await call(op+"/report-delivered","PATCH",{collectedAmount:order.total},ca)).status,409);
+ assert.equal((await (await call(op,"GET",undefined,customerCookie)).json()).order.status,"out_for_delivery");
+ assert.equal((await call(op+"/approve-delivery","PATCH",{},ca)).status,403);
+ assert.equal((await call(op+"/approve-delivery","PATCH",{},adminCookie)).status,200);
+ assert.equal((await call(op+"/approve-delivery","PATCH",{},adminCookie)).status,409);
+ const delivered=(await (await call(op,"GET",undefined,customerCookie)).json()).order;
+ assert.equal(delivered.status,"delivered");assert.equal(delivered.paymentStatus,"paid");
+ const disable="/orders/couriers/"+courierA.id+"/disabled";
+ assert.equal((await call(disable,"PATCH",{disabled:true},customerCookie)).status,403);
+ assert.equal((await call(disable,"PATCH",{disabled:true},adminCookie)).status,200);
+ assert.equal((await call("/orders/courier/my","GET",undefined,ca)).status,401);
+ assert.equal((await call(op+"/assign","PATCH",{courierId:courierA.id},adminCookie)).status,404);
+ assert.equal((await call(disable,"PATCH",{disabled:false},adminCookie)).status,200);
+ assert.equal((await call("/orders/courier/my","GET",undefined,ca)).status,401);
+ assert.equal((await call("/orders/courier/my","GET",undefined,await cookie(courierA,false))).status,200);
+
 
  }finally{cloudinary.uploader.upload_stream=originalUpload;cloudinary.uploader.destroy=originalDestroy;}
  assert.equal((await call("/categories/tropical","PUT",{name:"Tropical",isActive:false},adminCookie)).status,200);
