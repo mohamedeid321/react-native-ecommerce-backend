@@ -1,5 +1,6 @@
 import {getShopSettings,servesAddress} from "../models/shopSettings.model.js";
 import mongoose from "mongoose";
+import {checkoutGate} from "../utils/checkoutGate.js";
 import { scheduledDeliveryDate } from "../utils/deliverySchedule.js";
 import Cart from "../models/cart.model.js";
 import Product from "../models/product.model.js";
@@ -32,10 +33,14 @@ export const createOrder = async (req,res) => {
  const key=req.get("Idempotency-Key");
  if(req.authMode==="web"&&!key)return fail(res,400,"Checkout key required");
  if(key!==undefined&&!/^[a-zA-Z0-9_-]{16,128}$/.test(key))return fail(res,400,"Invalid checkout key");
- const session=await mongoose.startSession();
+ let session,release;
  let order,replayed=false;
  const reject=(status,message)=>{throw Object.assign(new Error(message),{checkoutStatus:status});};
  try{
+ if(key){const existing=await Order.findOne({user:req.user._id,checkoutKey:key});if(existing)return res.json({success:true,message:"تم استلام طلبك",order:existing});}
+ release=await checkoutGate.acquire();
+ if(!release){res.set("Retry-After","1");return fail(res,503,"Checkout busy; retry with the same key");}
+ session=await mongoose.startSession();
  await session.withTransaction(async()=>{
   replayed=false;
   if(key){order=await Order.findOne({user:req.user._id,checkoutKey:key}).session(session);if(order){replayed=true;return;}}
@@ -49,8 +54,11 @@ export const createOrder = async (req,res) => {
   if(!servesAddress(settings,info))reject(400,"التوصيل غير متاح في هذه المنطقة حالياً");
   const products=await Product.find({_id:{$in:cart.items.map(i=>i.product)},isActive:{$ne:false}}).session(session);
   const byId=new Map(products.map(p=>[String(p._id),p]));
+  const firstOrder=!(await Order.exists({user:req.user._id,status:{$ne:"cancelled"}}).session(session));
+  const delivery=Object.fromEntries(["city","governorate","neighborhood","building","apartment","floor","street","landmark","phone1","phone2"].map(k=>[k,info[k]]));
+  const deliveryDate=scheduledDeliveryDate(new Date(),settings.cutoffHour);
   const items=[];
-  for(const line of cart.items){
+  for(const line of [...cart.items].sort((a,b)=>String(a.product).localeCompare(String(b.product)))){
    const p=byId.get(String(line.product));
    if(!p)reject(400,"فيه منتج في السلة لم يعد متاحاً، راجع السلة");
    const quantity=line.quantity;
@@ -61,19 +69,18 @@ export const createOrder = async (req,res) => {
    items.push({product:p._id,name:p.name,image:p.image,unit:p.unit,unitPrice,quantity,lineTotal:round2(unitPrice*quantity)});
   }
   const counter=await Counter.findOneAndUpdate({_id:"order"},{$inc:{seq:1}},{upsert:true,new:true,session});
-  const firstOrder=!(await Order.exists({user:req.user._id,status:{$ne:"cancelled"}}).session(session));
   const totals=computeTotals(items,{...settings,firstOrder});
-  const delivery=Object.fromEntries(["city","governorate","neighborhood","building","apartment","floor","street","landmark","phone1","phone2"].map(k=>[k,info[k]]));
-  [order]=await Order.create([{orderNumber:100000+counter.seq,user:req.user._id,items,...totals,delivery,customer:{username:req.user.username,email:req.user.email},status:"placed",statusHistory:[{status:"placed"}],checkoutKey:key,deliveryDate:scheduledDeliveryDate(new Date(),settings.cutoffHour),paymentMethod:"cod",paymentStatus:"pending"}],{session});
+  [order]=await Order.create([{orderNumber:100000+counter.seq,user:req.user._id,items,...totals,delivery,customer:{username:req.user.username,email:req.user.email},status:"placed",statusHistory:[{status:"placed"}],checkoutKey:key,deliveryDate,paymentMethod:"cod",paymentStatus:"pending"}],{session});
   cart.items=[];await cart.save({session});
  });
+ release();release=undefined;
  if(!replayed)await notifyAdmins({title:"طلب جديد",body:`طلب #${order.orderNumber}`,orderId:order._id}).catch(()=>{});
  return res.status(replayed?200:201).json({success:true,message:"تم استلام طلبك",order});
  }catch(error){
  if(error.checkoutStatus)return fail(res,error.checkoutStatus,error.message);
  if(key&&error.code===11000){const existing=await Order.findOne({user:req.user._id,checkoutKey:key});if(existing)return res.json({success:true,order:existing});}
  return serverError(res,error,"createOrder");
- }finally{await session.endSession();}
+ }finally{release?.();await session?.endSession();}
 };
 
 const pageParams = (query, defaultLimit = 20) => {
