@@ -11,7 +11,7 @@ const getCartDoc = async (userId) =>
 // المنتجات اللي اتمسحت من المتجر بتتشال من السلة تلقائياً
 const buildCartResponse = async (cart) => {
   const ids = cart.items.map((i) => i.product);
-  const products = ids.length ? await Product.find({ _id: { $in: ids } }) : [];
+  const products = ids.length ? await Product.find({ _id: { $in: ids }, isActive: { $ne: false } }) : [];
   const byId = new Map(products.map((p) => [String(p._id), p]));
 
   const live = cart.items.filter((i) => byId.has(String(i.product)));
@@ -62,7 +62,7 @@ export const addToCart = async (req, res) => {
     if (!isValidId(productId)) return fail(res, 404, "المنتج غير موجود");
     if (!quantity) return fail(res, 400, "الكمية غير صحيحة");
 
-    const product = await Product.findById(productId);
+    const product = await Product.findOne({ _id: productId, isActive: { $ne: false } });
     if (!product) return fail(res, 404, "المنتج غير موجود");
     if (product.stock < 1) return fail(res, 400, "المنتج غير متوفر حالياً");
 
@@ -99,8 +99,9 @@ export const updateCartItem = async (req, res) => {
     const item = cart.items.find((i) => String(i.product) === String(productId));
     if (!item) return fail(res, 404, "المنتج غير موجود في السلة");
 
-    const product = await Product.findById(productId);
-    if (product && quantity > product.stock) {
+    const product = await Product.findOne({ _id: productId, isActive: { $ne: false } });
+    if (!product) return fail(res, 404, "المنتج غير متاح");
+    if (quantity > product.stock) {
       return fail(res, 400, `المتاح من "${product.name}" ${product.stock} ${product.unit || ""} فقط`);
     }
 
