@@ -1,3 +1,4 @@
+import {getShopSettings,servesAddress} from "../models/shopSettings.model.js";
 import mongoose from "mongoose";
 import { scheduledDeliveryDate } from "../utils/deliverySchedule.js";
 import Cart from "../models/cart.model.js";
@@ -37,10 +38,13 @@ export const createOrder = async (req,res) => {
  await session.withTransaction(async()=>{
   replayed=false;
   if(key){order=await Order.findOne({user:req.user._id,checkoutKey:key}).session(session);if(order){replayed=true;return;}}
+  const settings=await getShopSettings(session);
+  if(!settings.acceptingOrders)reject(409,"استقبال الطلبات متوقف مؤقتاً");
   const cart=await Cart.findOne({user:req.user._id}).session(session);
   if(!cart?.items.length)reject(400,"السلة فاضية");
   const info=await DeliveryInfo.findOne({user:req.user._id}).session(session);
   if(!info)reject(400,"من فضلك أكمل معلومات التوصيل أولاً");
+  if(!servesAddress(settings,info))reject(400,"التوصيل غير متاح في هذه المنطقة حالياً");
   const products=await Product.find({_id:{$in:cart.items.map(i=>i.product)},isActive:{$ne:false}}).session(session);
   const byId=new Map(products.map(p=>[String(p._id),p]));
   const items=[];
@@ -56,9 +60,9 @@ export const createOrder = async (req,res) => {
   }
   const counter=await Counter.findOneAndUpdate({_id:"order"},{$inc:{seq:1}},{upsert:true,new:true,session});
   const firstOrder=!(await Order.exists({user:req.user._id,status:{$ne:"cancelled"}}).session(session));
-  const totals=computeTotals(items,{firstOrder});
+  const totals=computeTotals(items,{...settings,firstOrder});
   const delivery=Object.fromEntries(["city","governorate","neighborhood","building","apartment","floor","street","landmark","phone1","phone2"].map(k=>[k,info[k]]));
-  [order]=await Order.create([{orderNumber:100000+counter.seq,user:req.user._id,items,...totals,delivery,customer:{username:req.user.username,email:req.user.email},status:"placed",statusHistory:[{status:"placed"}],checkoutKey:key,deliveryDate:scheduledDeliveryDate(),paymentMethod:"cod",paymentStatus:"pending"}],{session});
+  [order]=await Order.create([{orderNumber:100000+counter.seq,user:req.user._id,items,...totals,delivery,customer:{username:req.user.username,email:req.user.email},status:"placed",statusHistory:[{status:"placed"}],checkoutKey:key,deliveryDate:scheduledDeliveryDate(new Date(),settings.cutoffHour),paymentMethod:"cod",paymentStatus:"pending"}],{session});
   cart.items=[];await cart.save({session});
  });
  if(!replayed)await notifyAdmins({title:"طلب جديد",body:`طلب #${order.orderNumber}`,orderId:order._id}).catch(()=>{});
