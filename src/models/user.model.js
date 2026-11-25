@@ -13,6 +13,7 @@ const userSchema = new mongoose.Schema(
       required: [true, "email is required"],
       unique: true,
     },
+    phone: { type: String, unique: true, sparse: true },
     password: {
       type: String,
       required: [true, "password is required"],
@@ -36,7 +37,7 @@ const userSchema = new mongoose.Schema(
     ],
     role: {
       type: String,
-      enum: ["customer", "admin"],
+      enum: ["customer", "admin", "delivery"],
       default: "customer",
     },
   },
