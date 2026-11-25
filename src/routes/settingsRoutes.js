@@ -1,3 +1,4 @@
+import {createSingleFlight} from "../utils/singleFlight.js";
 import express from "express";
 import {ShopSettings,getShopSettings} from "../models/shopSettings.model.js";
 import {CITIES,MAX_NEIGHBORHOOD} from "../config/shop.js";
@@ -6,8 +7,9 @@ import {fail,serverError} from "../utils/http.js";
 import {round2} from "../utils/pricing.js";
 import {scheduledDeliveryDate} from "../utils/deliverySchedule.js";
 const router=express.Router();
+const publicFlight=createSingleFlight();
 router.get("/",async(req,res)=>{
- try{const settings=await getShopSettings();res.set("Cache-Control","no-store");res.json({success:true,settings,nextDeliveryDate:scheduledDeliveryDate(new Date(),settings.cutoffHour)});}catch(e){serverError(res,e,"getShopSettings");}
+ try{const settings=await publicFlight("settings",()=>getShopSettings());res.set("Cache-Control","no-store");res.json({success:true,settings,nextDeliveryDate:scheduledDeliveryDate(new Date(),settings.cutoffHour)});}catch(e){serverError(res,e,"getShopSettings");}
 });
 router.patch("/",protectRoute,adminRoute,async(req,res)=>{
  try{
