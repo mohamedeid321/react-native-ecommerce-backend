@@ -63,6 +63,8 @@ test("web auth HTTP integration",{skip:!process.env.TEST_MONGO_URI || !process.e
   assert.equal(enrolled.status,200);
   const uri=(await enrolled.json()).uri;
   const enrollmentSecret=new URL(uri).searchParams.get("secret");
+  // The HTTP server and test share this process. Freeze only the TOTP clock so bcrypt latency cannot cross a 30-second boundary.
+  authenticator.options={epoch:Date.UTC(2026,0,1,0,0,15)};
   assert.equal((await call("/web/admin/mfa/confirm",{...enrollment,code:"invalid"})).status,400);
   assert.equal((await call("/web/admin/mfa/confirm",{...enrollment,code:authenticator.generate(enrollmentSecret)})).status,204);
   assert.equal((await call("/web/admin/mfa/enroll",enrollment)).status,409);
@@ -73,6 +75,7 @@ test("web auth HTTP integration",{skip:!process.env.TEST_MONGO_URI || !process.e
   const code=authenticator.generate(secret);
   assert.equal((await call("/web/login",{...admin,code})).status,200);
   assert.equal((await call("/web/login",{...admin,code})).status,401);
+  authenticator.resetOptions();
   // Mock only the external Google verification boundary; exercise real DB and HTTP.
   process.env.GOOGLE_CLIENT_ID="test-client.apps.googleusercontent.com";
   const original=OAuth2Client.prototype.verifyIdToken;
@@ -115,6 +118,7 @@ test("web auth HTTP integration",{skip:!process.env.TEST_MONGO_URI || !process.e
   for(let i=0;i<21;i++) last=await call("/web/login",{identifier:"none@example.com",password:"wrong"});
   assert.equal(last.status,429);
  } finally {
+  authenticator.resetOptions();
   await new Promise(resolve=>server.close(resolve));
   await mongoose.connection.dropDatabase();
   await mongoose.disconnect();
