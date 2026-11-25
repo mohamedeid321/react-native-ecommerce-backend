@@ -8,11 +8,11 @@ const cartSchema = new mongoose.Schema(
       {
         _id: false,
         product: { type: mongoose.Schema.Types.ObjectId, ref: "Product", required: true },
-        quantity: { type: Number, required: true, min: 1, max: 99 },
+        quantity: { type: Number, required: true, min: 0.001, max: 99 },
       },
     ],
   },
-  { timestamps: true },
+  { timestamps: true, optimisticConcurrency: true },
 );
 
 export default mongoose.models.Cart || mongoose.model("Cart", cartSchema);
