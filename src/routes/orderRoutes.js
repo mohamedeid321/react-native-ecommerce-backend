@@ -1,4 +1,4 @@
-import {createCourier,listCouriers,assignCourier,listCourierOrders,reportDelivered,approveDelivery} from "../controllers/delivery.controller.js";
+import {setCourierDisabled,createCourier,listCouriers,assignCourier,listCourierOrders,reportDelivered,approveDelivery} from "../controllers/delivery.controller.js";
 import express from "express";
 import { protectRoute, adminRoute } from "../middleware/auth.middleware.js";
 import {
@@ -15,13 +15,14 @@ router.use(protectRoute);
 const courierOnly=(req,res,next)=>req.user.role==="delivery"?next():res.status(403).json({message:"Courier only"});
 router.get("/couriers",adminRoute,listCouriers);
 router.post("/couriers",adminRoute,createCourier);
+router.patch("/couriers/:id/disabled",adminRoute,setCourierDisabled);
 router.get("/courier/my",courierOnly,listCourierOrders);
 router.patch("/:id/assign",adminRoute,assignCourier);
 router.patch("/:id/report-delivered",courierOnly,reportDelivered);
 router.patch("/:id/approve-delivery",adminRoute,approveDelivery);
 
 // العميل
-router.post("/", createOrder);
+router.post("/", (req,res,next)=>req.user.role==="customer"?next():res.status(403).json({message:"Customer only"}), createOrder);
 router.get("/my", getMyOrders); // لازم قبل "/:id"
 router.patch("/:id/cancel", cancelOrder);
 
