@@ -43,7 +43,7 @@ test("catalog HTTP integration",{skip:!process.env.TEST_MONGO_URI||!process.env.
  const call=(path,method="GET",body,cookie="")=>fetch(base+path,{method,headers:{"Content-Type":"application/json",Cookie:cookie},body:body===undefined?undefined:JSON.stringify(body)});
  try{
  const store=createSessionStore(getRedis());
- const user=await User.create({username:"Catalog customer",email:"catalog@example.com",password:"Test-password-123"});
+ const user=await User.create({username:"Catalog customer",email:"catalog@example.com",phone:"+201112345678",password:"Test-password-123"});
  const admin=await User.create({username:"Catalog admin",email:"catalog-admin@example.com",password:"Test-password-123",role:"admin"});
  const cookie=async(u,mfa)=>{const s=await store.create(u.id,mfa);return "lotta_access="+signAccessToken(u.id,s.sessionId);};
  const customerCookie=await cookie(user,false),adminCookie=await cookie(admin,true);
@@ -129,6 +129,10 @@ test("catalog HTTP integration",{skip:!process.env.TEST_MONGO_URI||!process.env.
  assert.equal((await Product.findById(mango._id)).stock,4.5);
  await Product.updateOne({_id:mango._id},{$set:{isActive:true}});
  const checkout=(key)=>fetch(base+"/orders",{method:"POST",headers:{"Content-Type":"application/json",Cookie:customerCookie,"Idempotency-Key":key},body:"{}"});
+ assert.equal((await call("/orders","POST",{},customerCookie)).status,400);
+ await User.updateOne({_id:user._id},{$unset:{phone:1}});
+ assert.equal((await checkout("checkout-missing-phone-001")).status,400);
+ await User.updateOne({_id:user._id},{$set:{phone:"+201112345678"}});
  const key="checkout-test-key-001";
  const placed=await checkout(key);assert.equal(placed.status,201);
  const order=(await placed.json()).order;
