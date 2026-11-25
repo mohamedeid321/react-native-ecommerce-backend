@@ -1,3 +1,4 @@
+import { checkAdminCode } from "./adminMfa.controller.js";
 import User from "../models/user.model.js";
 import { getRedis } from "../lib/redis.js";
 import { createSessionStore } from "../lib/sessionStore.js";
@@ -32,8 +33,12 @@ export async function webLogin(req,res) {
   const loginId = identifier ?? email ?? phone;
   if (typeof loginId !== "string" || typeof password !== "string" || loginId.length > 254 || Buffer.byteLength(password) > 72) return res.status(400).json({message:"Invalid credentials"});
   const normalized = normalizePhone(loginId);
-  const user = await User.findOne(normalized ? {phone:normalized} : {email:loginId.trim().toLowerCase()});
+  const user = await User.findOne(normalized ? {phone:normalized} : {email:loginId.trim().toLowerCase()}).select("+mfaSecret");
   if (!user || !(await user.comparePassword(password))) return res.status(401).json({message:"Invalid credentials"});
+  if (user.role === "admin") {
+    if (!user.mfaSecret) return res.status(403).json({message:"Admin MFA enrollment required"});
+    if (!(await checkAdminCode(user,req.body.code))) return res.status(401).json({message:"MFA code required or invalid"});
+  }
   const session = await store().create(user.id);
   setAuthCookies(res, signAccessToken(user.id, session.sessionId), session.refreshToken);
   return res.json({user:publicUser(user)});
