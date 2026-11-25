@@ -9,9 +9,9 @@ const generateToken = (userId) => {
 //
 export const signup = async (req, res) => {
   try {
-    const { email, username, password } = req.body;
+    const { email, username, password } = req.body || {};
 
-    if (!username || !email || !password) {
+    if (typeof username !== "string" || typeof email !== "string" || typeof password !== "string" || username.length > 80 || email.length > 254 || !email.trim() || Buffer.byteLength(password)>72) {
       return res.status(400).json({ message: "All fields are required" });
     }
 
@@ -39,7 +39,7 @@ export const signup = async (req, res) => {
     }
 
     // get random avatar
-    const profileImage = `https://api.dicebear.com/7.x/avataaars/svg?seed=${username}`;
+    const profileImage = `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(username)}`;
 
     const user = new User({
       email,
@@ -71,14 +71,14 @@ export const signup = async (req, res) => {
 
 export const login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password } = req.body || {};
 
-    if (!email || !password)
+    if (typeof email !== "string" || typeof password !== "string" || !email.trim() || email.length>254 || Buffer.byteLength(password)>72)
       return res.status(400).json({ message: "All fields are required" });
 
     // check if user exists
     const user = await User.findOne({ email });
-    if (!user || user.disabled || user.role === "delivery") return res.status(400).json({ message: "Invalid credentials" });
+    if (!user || user.disabled || user.role !== "customer") return res.status(400).json({ message: "Invalid credentials" });
 
     // check if password is correct
     const isPasswordCorrect = await user.comparePassword(password);
