@@ -121,6 +121,12 @@ test("catalog HTTP integration",{skip:!process.env.TEST_MONGO_URI||!process.env.
  assert.equal((await (await call("/cart","GET",undefined,secondCookie)).json()).cart.items.length,0);
  await DeliveryInfo.create({user:user._id,city:CITIES[0],neighborhood:1,building:"1",apartment:"1",floor:"1",phone1:"01012345678"});
  assert.equal((await call("/products/"+mango._id+"/visibility","PATCH",{isActive:false},adminCookie)).status,200);
+ const beforeHiddenRead=await Cart.findOne({user:user._id}).lean();
+ const hiddenRead=await (await call("/cart","GET",undefined,customerCookie)).json();
+ assert.equal(hiddenRead.cart.items.length,0);
+ assert.equal(hiddenRead.cart.total,0);
+ assert.deepEqual((await Cart.findOne({user:user._id}).lean()).items,beforeHiddenRead.items);
+ assert.equal((await call("/cart","GET",undefined)).status,401);
  assert.equal((await call("/orders","POST",{},customerCookie)).status,400);
  assert.equal((await call("/cart","POST",{productId:mango._id,quantity:1},customerCookie)).status,404);
  assert.equal((await (await call("/products/search?q=Mango")).json()).products.length,0);
