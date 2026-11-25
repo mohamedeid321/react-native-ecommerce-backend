@@ -12,6 +12,9 @@ on:
       - 'src/middleware/auth.middleware.js'
       - 'src/lib/sessionStore.js'
       - 'src/lib/db.js'
+      - 'src/utils/singleFlight.js'
+      - 'src/routes/categoryRoutes.js'
+      - 'src/routes/settingsRoutes.js'
       - '.github/workflows/performance.yml'
   workflow_dispatch:
 concurrency:
@@ -75,6 +78,7 @@ jobs:
         id: checkout
         run: docker run --rm --network host --user "$(id -u):$(id -g)" -v "$PWD/performance:/perf:ro" grafana/k6:0.57.0 run /perf/checkout.k6.js
       - name: Verify database invariants
+        id: invariants
         if: always() && steps.checkout.outcome != 'skipped'
         run: node performance/verify.js
       - name: Progressive read benchmark
@@ -84,6 +88,20 @@ jobs:
             echo "BENCHMARK_VUS=$vus"
             docker run --rm --network host --user "$(id -u):$(id -g)" -v "$PWD/performance:/perf:ro" -e VUS="$vus" grafana/k6:0.57.0 run /perf/read.k6.js || exit 1
           done
+      - name: Five-minute stability benchmark at 250 VUs
+        if: always() && steps.invariants.outcome == 'success'
+        run: |
+          (
+            while true; do
+              echo "RESOURCE_SAMPLE $(date -u +%FT%TZ)"
+              ps -p "$(cat /tmp/lotta-perf-api.pid)" -o pid,%cpu,rss,etime
+              docker stats --no-stream --format '{{.Name}} CPU={{.CPUPerc}} memory={{.MemUsage}}' lotta-perf-mongo
+              sleep 30
+            done
+          ) &
+          monitor=$!
+          trap 'kill "$monitor" 2>/dev/null || true' EXIT
+          docker run --rm --network host --user "$(id -u):$(id -g)" -v "$PWD/performance:/perf:ro" -e VUS=250 -e DURATION=5m -e SOAK=1 grafana/k6:0.57.0 run /perf/read.k6.js
       - name: Cleanup disposable fixture
         if: always()
         run: |
