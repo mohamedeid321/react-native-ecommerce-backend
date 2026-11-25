@@ -33,3 +33,22 @@ export async function googleLogin(req,res) {
   setAuthCookies(res,signAccessToken(user.id,session.sessionId),session.refreshToken);
   return res.json({user:{id:user.id,username:user.username,displayName:user.displayName,email:user.email,phone:user.phone,role:user.role},profileIncomplete:!user.phone});
 }
+
+export async function linkGoogle(req,res) {
+  if (req.user.role !== "customer") return res.sendStatus(403);
+  const {credential,password} = req.body || {};
+  if (!process.env.GOOGLE_CLIENT_ID) return res.sendStatus(503);
+  if (typeof credential !== "string" || credential.length > 12000 || typeof password !== "string" || Buffer.byteLength(password)>72) return res.sendStatus(400);
+  const user = await User.findById(req.user.id).select("+googleSub");
+  if (!user || !(await user.comparePassword(password))) return res.sendStatus(401);
+  let p;
+  try { p = (await new OAuth2Client(process.env.GOOGLE_CLIENT_ID).verifyIdToken({idToken:credential,audience:process.env.GOOGLE_CLIENT_ID})).getPayload(); }
+  catch { return res.sendStatus(401); }
+  if (!p?.sub || p.email_verified !== true || p.email?.trim().toLowerCase() !== user.email.trim().toLowerCase()) return res.sendStatus(403);
+  if (user.googleSub === p.sub) return res.sendStatus(204);
+  if (user.googleSub) return res.sendStatus(409);
+  try {
+    const result = await User.updateOne({_id:user.id,googleSub:{$exists:false}},{$set:{googleSub:p.sub}});
+    return res.sendStatus(result.modifiedCount === 1 ? 204 : 409);
+  } catch(error) { if(error.code===11000) return res.sendStatus(409); throw error; }
+}
