@@ -13,12 +13,14 @@ on:
       - 'src/lib/sessionStore.js'
       - 'src/lib/db.js'
       - 'src/utils/singleFlight.js'
+      - 'src/lib/publicCache.js'
+      - 'src/controllers/catalogAdmin.controller.js'
       - 'src/routes/categoryRoutes.js'
       - 'src/routes/settingsRoutes.js'
       - '.github/workflows/performance.yml'
   workflow_dispatch:
 concurrency:
-  group: performance-${{ github.ref }}
+  group: performance-cache-${{ github.ref }}
   cancel-in-progress: true
 permissions:
   contents: read
@@ -36,6 +38,8 @@ jobs:
       REDIS_URL: redis://127.0.0.1:6379
       CLIENT_URL: http://localhost:5173
       NODE_ENV: test
+      PUBLIC_CACHE_ENABLED: '1'
+      PUBLIC_CACHE_NAMESPACE: perf
       PORT: 3000
     steps:
       - uses: actions/checkout@v4
@@ -102,6 +106,20 @@ jobs:
           monitor=$!
           trap 'kill "$monitor" 2>/dev/null || true' EXIT
           docker run --rm --network host --user "$(id -u):$(id -g)" -v "$PWD/performance:/perf:ro" -e VUS=250 -e DURATION=5m -e SOAK=1 grafana/k6:0.57.0 run /perf/read.k6.js
+      - name: Compare uncached reads at 1000 VUs on the same runner
+        if: always() && steps.invariants.outcome == 'success'
+        continue-on-error: true
+        run: |
+          kill "$(cat /tmp/lotta-perf-api.pid)" || true
+          sleep 1
+          PUBLIC_CACHE_ENABLED=0 node src/index.js > /tmp/lotta-perf-api.log 2>&1 &
+          echo $! > /tmp/lotta-perf-api.pid
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3000/api/health/ready; then break; fi
+            sleep 1
+          done
+          echo "CACHE_DISABLED_1000_VUS"
+          docker run --rm --network host --user "$(id -u):$(id -g)" -v "$PWD/performance:/perf:ro" -e VUS=1000 grafana/k6:0.57.0 run /perf/read.k6.js
       - name: Cleanup disposable fixture
         if: always()
         run: |
