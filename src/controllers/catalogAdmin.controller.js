@@ -1,3 +1,4 @@
+import {publicCache} from "../lib/publicCache.js";
 import Product from "../models/product.model.js";
 import mongoose from "mongoose";
 export async function listAdminProducts(req,res) {
@@ -16,5 +17,6 @@ export async function setProductVisibility(req,res) {
  if(typeof req.body?.isActive!=="boolean") return res.sendStatus(400);
  const product=await Product.findByIdAndUpdate(req.params.id,{$set:{isActive:req.body.isActive}},{new:true,runValidators:true});
  if(!product) return res.sendStatus(404);
+ await publicCache.invalidate("catalog","search");
  res.json({success:true,product});
 }
