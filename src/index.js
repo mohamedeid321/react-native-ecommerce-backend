@@ -6,6 +6,7 @@ import mongoose from "mongoose";
 import "dotenv/config";
 
 import authRoutes from "./routes/authRoutes.js";
+import categoryRoutes from "./routes/categoryRoutes.js";
 import productRoutes from "./routes/productRoutes.js";
 import cartRoutes from "./routes/cartRoutes.js";
 
@@ -39,6 +40,7 @@ app.use(async (req, res, next) => {
 
 app.use("/api/auth", authRoutes);
 app.use("/api/products", productRoutes);
+app.use("/api/categories", categoryRoutes);
 //
 app.use("/api/cart", cartRoutes);
 app.use("/api/wishlist", wishlistRoutes);
