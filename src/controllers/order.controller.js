@@ -35,7 +35,7 @@ export const createOrder = async (req, res) => {
       return fail(res, 400, "من فضلك أكمل معلومات التوصيل أولاً", { code: "NO_DELIVERY_INFO" });
     }
 
-    const products = await Product.find({ _id: { $in: cart.items.map((i) => i.product) } });
+    const products = await Product.find({ _id: { $in: cart.items.map((i) => i.product) }, isActive: { $ne: false } });
     const byId = new Map(products.map((p) => [String(p._id), p]));
 
     const items = [];
@@ -57,7 +57,7 @@ export const createOrder = async (req, res) => {
     // خصم المخزون بشكل شرطي (لو الكمية مش كفاية مش بيخصم)
     for (const item of items) {
       const result = await Product.updateOne(
-        { _id: item.product, stock: { $gte: item.quantity } },
+        { _id: item.product, isActive: { $ne: false }, stock: { $gte: item.quantity } },
         { $inc: { stock: -item.quantity } },
       );
       if (!result.modifiedCount) {
