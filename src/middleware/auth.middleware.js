@@ -22,6 +22,8 @@ export const protectRoute = async (req,res,next) => {
     if (user.role === "admin" && (!cookie || !(await createSessionStore(getRedis()).active(decoded.sid,decoded.userId,true)))) return res.status(403).json({message:"Admin MFA web login required"});
     if (user.role === "delivery" && !cookie) return res.status(403).json({message:"Courier web login required"});
     req.user = user;
+    req.authMode = cookie ? "web" : "legacy";
+    res.set("Cache-Control","no-store");
     next();
   } catch { return res.status(503).json({message:"Authentication service unavailable"}); }
 };
