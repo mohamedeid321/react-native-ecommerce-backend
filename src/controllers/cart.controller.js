@@ -1,3 +1,4 @@
+import Order from "../models/order.model.js";
 import Cart from "../models/cart.model.js";
 import Product from "../models/product.model.js";
 import { MAX_QTY } from "../config/shop.js";
@@ -38,7 +39,8 @@ const buildCartResponse = async (cart) => {
     };
   });
 
-  return { items, count: items.length, ...computeTotals(items) };
+  const firstOrder=!(await Order.exists({user:cart.user,status:{$ne:"cancelled"}}));
+  return { items, count: items.length, ...computeTotals(items,{firstOrder}) };
 };
 
 const parseQuantity = (value) => {
