@@ -1,3 +1,5 @@
+import mongoose from 'mongoose';
+import SavedAddress,{addressRecord} from '../models/savedAddress.model.js';
 import DeliveryInfo from "../models/deliveryInfo.model.js";
 import { CITIES, GOVERNORATE, MAX_NEIGHBORHOOD } from "../config/shop.js";
 import { fail, serverError } from "../utils/http.js";
@@ -9,7 +11,9 @@ const PHONE_RE = /^01[0125]\d{8}$/; // موبايل مصري
 export const getDeliveryInfo = async (req, res) => {
   try {
     const info = await DeliveryInfo.findOne({ user: req.user._id });
-    res.json({ success: true, deliveryInfo: info || null });
+    const saved=await SavedAddress.find({user:req.user._id}).sort({updatedAt:-1}).lean();
+    const current=info?addressRecord(info):null;
+    res.json({success:true,deliveryInfo:info,addresses:[...(current?[current]:[]),...saved.filter(a=>a.key!==current?.key).map(a=>a.address)]});
   } catch (error) {
     serverError(res, error, "getDeliveryInfo");
   }
@@ -44,13 +48,18 @@ export const saveDeliveryInfo = async (req, res) => {
     if (!PHONE_RE.test(data.phone1)) return fail(res, 400, "رقم الهاتف 1 غير صحيح");
     if (data.phone2 && !PHONE_RE.test(data.phone2)) return fail(res, 400, "رقم الهاتف 2 غير صحيح");
 
-    const info = (await DeliveryInfo.findOne({ user: req.user._id })) ||
-      new DeliveryInfo({ user: req.user._id });
-    info.set(data);
-    await info.save();
-
-    res.json({ success: true, message: "تم تحديث معلومات التوصيل", deliveryInfo: info });
+    const selected=addressRecord(data);
+    await mongoose.connection.transaction(async session=>{
+      const user=req.user._id;
+      const previous=await DeliveryInfo.findOne({user}).session(session);
+      const records=[selected];
+      if(previous && addressRecord(previous).key!==selected.key)records.push(addressRecord(previous));
+      for(const address of records)await SavedAddress.updateOne({user,key:address.key},{$setOnInsert:{address}},{upsert:true,session});
+      await DeliveryInfo.findOneAndUpdate({user},{$set:data},{upsert:true,runValidators:true,session});
+    });
+    res.json({success:true,deliveryInfo:selected,addressKey:selected.key});
   } catch (error) {
     serverError(res, error, "saveDeliveryInfo");
   }
 };
+

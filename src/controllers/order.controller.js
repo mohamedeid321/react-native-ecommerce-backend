@@ -1,3 +1,5 @@
+import SavedAddress,{addressRecord} from '../models/savedAddress.model.js';
+import {publicCache} from '../lib/publicCache.js';
 import {getShopSettings,servesAddress} from "../models/shopSettings.model.js";
 import mongoose from "mongoose";
 import {checkoutGate} from "../utils/checkoutGate.js";
@@ -49,7 +51,12 @@ export const createOrder = async (req,res) => {
   if(!settings.acceptingOrders)reject(409,"استقبال الطلبات متوقف مؤقتاً");
   const cart=await Cart.findOne({user:req.user._id}).session(session);
   if(!cart?.items.length)reject(400,"السلة فاضية");
-  const info=await DeliveryInfo.findOne({user:req.user._id}).session(session);
+  let info=await DeliveryInfo.findOne({user:req.user._id}).session(session);
+  const addressKey=req.body?.addressKey;
+  if(addressKey!==undefined){
+    if(typeof addressKey!=="string"||!/^([a-f0-9]{64})$/.test(addressKey))reject(400,"عنوان غير صالح");
+    if(!info||addressRecord(info).key!==addressKey)info=(await SavedAddress.findOne({user:req.user._id,key:addressKey}).session(session))?.address;
+  }
   if(!info)reject(400,"من فضلك أكمل معلومات التوصيل أولاً");
   if(!servesAddress(settings,info))reject(400,"التوصيل غير متاح في هذه المنطقة حالياً");
   const products=await Product.find({_id:{$in:cart.items.map(i=>i.product)},isActive:{$ne:false}}).session(session);
@@ -70,10 +77,11 @@ export const createOrder = async (req,res) => {
   }
   const counter=await Counter.findOneAndUpdate({_id:"order"},{$inc:{seq:1}},{upsert:true,new:true,session});
   const totals=computeTotals(items,{...settings,firstOrder});
-  [order]=await Order.create([{orderNumber:100000+counter.seq,user:req.user._id,items,...totals,delivery,customer:{username:req.user.username,email:req.user.email},status:"placed",statusHistory:[{status:"placed"}],checkoutKey:key,deliveryDate,paymentMethod:"cod",paymentStatus:"pending"}],{session});
+  [order]=await Order.create([{orderNumber:100000+counter.seq,user:req.user._id,items,...totals,delivery,customer:{username:req.user.displayName||req.user.username,email:req.user.email},status:"placed",statusHistory:[{status:"placed"}],checkoutKey:key,deliveryDate,paymentMethod:"cod",paymentStatus:"pending"}],{session});
   cart.items=[];await cart.save({session});
  });
  release();release=undefined;
+ if(!replayed)await publicCache.invalidate("catalog","search");
  if(!replayed)await notifyAdmins({title:"طلب جديد",body:`طلب #${order.orderNumber}`,orderId:order._id}).catch(()=>{});
  return res.status(replayed?200:201).json({success:true,message:"تم استلام طلبك",order});
  }catch(error){
@@ -126,6 +134,7 @@ const transition = async (order,status,cancelledBy="")=>{
   changed=Boolean(result.modifiedCount);
   if(changed&&status==="cancelled")for(const item of order.items)if(item.product)await Product.updateOne({_id:item.product},{$inc:{stock:item.quantity}},{session});
  });
+ if(changed && status==="cancelled")await publicCache.invalidate("catalog","search");
  return changed;
  }finally{await session.endSession();}
 };
@@ -208,3 +217,4 @@ export const updateOrderStatus = async (req, res) => {
     serverError(res, error, "updateOrderStatus");
   }
 };
+

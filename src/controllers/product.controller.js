@@ -213,6 +213,7 @@ export const getRecommendedProducts = async (req, res) => {
           description: 1,
           image: 1,
           price: 1,
+          stock: 1,
           discount: { $ifNull: ["$discount", 0] },
           unit: 1,
           // الـ aggregate مبيحسبش الـ virtuals فبنحسب finalPrice هنا

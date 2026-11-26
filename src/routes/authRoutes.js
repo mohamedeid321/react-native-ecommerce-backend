@@ -1,3 +1,4 @@
+import {updateCustomer,forgotPassword,resetPassword} from '../controllers/accountSettings.controller.js';
 import {updateCustomerPhoto} from '../controllers/customerPhoto.controller.js';
 import express from "express";
 import { signup, login } from "../controllers/auth.controller.js";
@@ -19,6 +20,9 @@ router.post("/web/logout", webLogout);
 router.post("/web/logout-all", protectRoute, webLogoutAll);
 router.post("/web/complete-profile", authRateLimit("profile",10), protectRoute, webCompleteProfile);
 router.patch("/web/profile/photo",protectRoute,authRateLimit("customer-photo",20),updateCustomerPhoto);
+router.patch("/web/profile",protectRoute,authRateLimit("customer-settings",15),updateCustomer);
+router.post("/web/password/forgot",authRateLimit("forgot-password",5),forgotPassword);
+router.post("/web/password/reset",authRateLimit("reset-password",10),resetPassword);
 router.get("/web/me", protectRoute, webMe);
 
 router.post("/register", authRateLimit("/register", 10), signup);

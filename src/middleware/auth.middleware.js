@@ -22,6 +22,7 @@ export const protectRoute = async (req,res,next) => {
     ]);
     if (!active) return res.status(401).json({message:"Session expired"});
     if (!user || user.disabled) return res.status(401).json({message:"Authentication required"});
+    if (!cookie && user.passwordChangedAt && (!decoded.iat || decoded.iat < Math.ceil(user.passwordChangedAt.getTime()/1000)))return res.status(401).json({message:"Session expired"});
     if (user.role === "admin" && (!cookie || !(await createSessionStore(getRedis()).active(decoded.sid,decoded.userId,true)))) return res.status(403).json({message:"Admin MFA web login required"});
     if (user.role === "delivery" && !cookie) return res.status(403).json({message:"Courier web login required"});
     req.user = user;

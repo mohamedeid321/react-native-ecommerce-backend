@@ -19,6 +19,9 @@ const userSchema = new mongoose.Schema(
     googleSub: { type: String, unique: true, sparse: true, select: false },
     displayName: { type: String, maxlength: 80 },
     phone: { type: String, unique: true, sparse: true },
+    resetDigest:{type:String,select:false},
+    resetExpires:{type:Date,select:false},
+    passwordChangedAt:Date,
     password: {
       type: String,
       required: [true, "password is required"],
