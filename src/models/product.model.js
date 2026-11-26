@@ -50,6 +50,8 @@ const productSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    extraImage: String,
+    defaultImage: String,
     category: {
       type: String,
       required: [true, "category is required"],

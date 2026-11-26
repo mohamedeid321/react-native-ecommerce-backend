@@ -11,7 +11,8 @@ router.post("/web/admin/mfa/confirm", authRateLimit("mfa-confirm",10), confirmAd
 router.post("/web/google/link", authRateLimit("google-link",10), protectRoute, linkGoogle);
 router.post("/web/google", authRateLimit("google",20), googleLogin);
 router.post("/web/register", authRateLimit("/web/register", 10), webRegister);
-router.post("/web/login", authRateLimit("/web/login", 20), webLogin);
+router.post("/web/admin/login", authRateLimit("/web/admin/login", 20), (req,res)=>webLogin(req,res,true));
+router.post("/web/login", authRateLimit("/web/login", 20), (req,res)=>webLogin(req,res,false));
 router.post("/web/refresh", authRateLimit("/web/refresh", 60), webRefresh);
 router.post("/web/logout", webLogout);
 router.post("/web/logout-all", protectRoute, webLogoutAll);

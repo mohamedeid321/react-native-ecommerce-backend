@@ -120,6 +120,9 @@ export const createProduct = async (req, res) => {
       uploadedUrls.push(detailImageUrl);
     }
 
+    const extra = req.files?.extraImage?.[0];
+    const extraUrl = extra ? (await uploadFile(extra)).secure_url : "";
+    if(extraUrl) uploadedUrls.push(extraUrl);
     // 5. تخزين المنتج
     const newProduct = await Product.create({
       name: name.trim(),
@@ -132,8 +135,10 @@ export const createProduct = async (req, res) => {
       purchasePrice,
       image: imageUpload.secure_url,
       detailImage: detailImageUrl,
+      extraImage: extraUrl,
     });
 
+    uploadedUrls.length = 0;
     await publicCache.invalidate("catalog","search");
     return res.status(201).json({
       success: true,
@@ -314,9 +319,16 @@ export const updateProduct = async (req, res) => {
       product.detailImage = upload.secure_url;
     }
 
+    if (req.files?.extraImage?.[0]) {
+      const uploaded = await uploadFile(req.files.extraImage[0]);
+      newUrls.push(uploaded.secure_url);
+      oldUrls.push(product.extraImage);
+      product.extraImage = uploaded.secure_url;
+    }
     const updated = await product.save();
+    newUrls.length = 0;
     await publicCache.invalidate("catalog","search");
-    await Promise.all(oldUrls.map(deleteCloudinaryImage));
+    await Promise.all(oldUrls.filter(url=>url && url!==product.defaultImage).map(deleteCloudinaryImage));
 
     res.json({
       success: true,

@@ -28,13 +28,13 @@ export async function webRegister(req,res) {
 }
 const store = () => createSessionStore(getRedis());
 const publicUser = u => ({ id: u.id, username: u.username, email: u.email, phone: u.phone, role: u.role, profileImage: u.profileImage });
-export async function webLogin(req,res) {
+export async function webLogin(req,res,adminOnly=false) {
   const { email, phone, identifier, password } = req.body || {};
   const loginId = identifier ?? email ?? phone;
   if (typeof loginId !== "string" || typeof password !== "string" || loginId.length > 254 || Buffer.byteLength(password) > 72) return res.status(400).json({message:"Invalid credentials"});
   const normalized = normalizePhone(loginId);
   const user = await User.findOne(normalized ? {phone:normalized} : {email:loginId.trim().toLowerCase()}).select("+mfaSecret");
-  if (!user || user.disabled || !(await user.comparePassword(password))) return res.status(401).json({message:"Invalid credentials"});
+  if (!user || user.disabled || (user.role === "admin") !== adminOnly || !(await user.comparePassword(password))) return res.status(401).json({message:"Invalid credentials"});
   if (user.role === "admin") {
     if (!user.mfaSecret) return res.status(403).json({message:"Admin MFA enrollment required"});
     if (!(await checkAdminCode(user,req.body.code))) return res.status(401).json({message:"MFA code required or invalid"});

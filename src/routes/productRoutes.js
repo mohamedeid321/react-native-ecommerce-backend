@@ -21,7 +21,7 @@ router.patch("/:id/visibility", protectRoute, adminRoute, setProductVisibility);
 // الحد الأقصى لكل صورة 2MB: الصورتين مع بعض لازم يفضلوا تحت حد Vercel للـ request (حوالي 4.5MB)
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 2 * 1024 * 1024, files: 2 },
+  limits: { fileSize: 2 * 1024 * 1024, files: 3 },
   fileFilter: (req, file, cb) =>
     file.mimetype.startsWith("image/")
       ? cb(null, true)
@@ -32,6 +32,7 @@ const upload = multer({
 const productImages = upload.fields([
   { name: "image", maxCount: 1 },
   { name: "detailImage", maxCount: 1 },
+  { name: "extraImage", maxCount: 1 },
 ]);
 
 // ---------- عام (guest يقدر يشوفها) ----------

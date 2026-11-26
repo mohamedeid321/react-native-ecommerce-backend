@@ -6,7 +6,7 @@ import {fail,isValidId,serverError} from "../utils/http.js";
 import {notifyUser} from "../utils/notify.js";
 const today=()=>new Intl.DateTimeFormat("en-CA",{timeZone:"Africa/Cairo",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
 export const listCouriers=async(req,res)=>{
- try{res.json({success:true,couriers:await User.find({role:"delivery"}).select("username displayName phone disabled").limit(200)});}catch(e){serverError(res,e,"listCouriers");}
+ try{res.json({success:true,couriers:await User.find({role:"delivery"}).select("username displayName email phone disabled").limit(200)});}catch(e){serverError(res,e,"listCouriers");}
 };
 export const assignCourier=async(req,res)=>{
  try{
@@ -73,3 +73,23 @@ export const setCourierDisabled=async(req,res)=>{
  return res.json({success:true,disabled});
  }catch(e){serverError(res,e,"setCourierDisabled");}
 };
+
+export async function updateCourier(req,res){
+ const {username,email,password,phone,profileImage}=req.body??{};
+ if(!isValidId(req.params.id)||typeof username!=="string"||username.trim().length<3||username.length>80||
+   typeof email!=="string"||email.length>254||!/^\S+@\S+\.\S+$/.test(email)||
+   typeof phone!=="string"||!/^\+201[0125]\d{8}$/.test(phone)||
+   (password!==undefined&&(typeof password!=="string"||password.length<12||Buffer.byteLength(password)>72))||
+   (profileImage!==undefined&&(typeof profileImage!=="string"||profileImage.length>65000||(profileImage!==""&&!/^data:image\/jpeg;base64,[A-Za-z0-9+/]+=*$/.test(profileImage)))))return fail(res,400,"Invalid courier details");
+ try{
+   const user=await User.findOne({_id:req.params.id,role:"delivery"});
+   if(!user)return fail(res,404,"Courier not found");
+   const normalized=email.trim().toLowerCase();
+   if(password||user.email!==normalized||user.phone!==phone)await createSessionStore(getRedis()).revokeAll(user.id);
+   Object.assign(user,{username:username.trim(),displayName:username.trim(),email:normalized,phone});
+   if(password)user.password=password;
+   if(profileImage!==undefined)user.profileImage=profileImage;
+   await user.save();
+   return res.json({success:true});
+ }catch(e){if(e.code===11000)return fail(res,409,"Account already exists");return serverError(res,e,"updateCourier");}
+}
