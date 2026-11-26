@@ -1,3 +1,4 @@
+import {customerAvatar} from '../lib/customerAvatar.js';
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 
@@ -24,9 +25,10 @@ const userSchema = new mongoose.Schema(
       minlength: 6,
     },
     courierResidence: { type: String, maxlength: 200 },
+    profileImagePublicId: {type:String,select:false},
     profileImage: {
       type: String,
-      default: "",
+      default: function(){return (this.role??"customer")==="customer"?customerAvatar():""},
     },
     cartItems: [
       {

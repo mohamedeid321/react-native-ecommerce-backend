@@ -31,7 +31,7 @@ export async function googleLogin(req,res) {
   if (user.disabled || user.role !== "customer") return res.status(403).json({message:"Google sign-in restricted to customer accounts"});
   const session = await createSessionStore(getRedis()).create(user.id);
   setAuthCookies(res,signAccessToken(user.id,session.sessionId),session.refreshToken);
-  return res.json({user:{id:user.id,username:user.username,displayName:user.displayName,email:user.email,phone:user.phone,role:user.role},profileIncomplete:!user.phone});
+  return res.json({user:{id:user.id,username:user.username,displayName:user.displayName,email:user.email,phone:user.phone,role:user.role,profileImage:user.profileImage},profileIncomplete:!user.phone});
 }
 
 export async function linkGoogle(req,res) {
@@ -52,3 +52,4 @@ export async function linkGoogle(req,res) {
     return res.sendStatus(result.modifiedCount === 1 ? 204 : 409);
   } catch(error) { if(error.code===11000) return res.sendStatus(409); throw error; }
 }
+

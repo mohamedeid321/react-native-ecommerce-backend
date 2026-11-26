@@ -1,3 +1,4 @@
+import {updateCustomerPhoto} from '../controllers/customerPhoto.controller.js';
 import express from "express";
 import { signup, login } from "../controllers/auth.controller.js";
 import { webRegister, webLogin, webRefresh, webLogout, webMe, webLogoutAll, webCompleteProfile } from "../controllers/webAuth.controller.js";
@@ -17,6 +18,7 @@ router.post("/web/refresh", authRateLimit("/web/refresh", 60), webRefresh);
 router.post("/web/logout", webLogout);
 router.post("/web/logout-all", protectRoute, webLogoutAll);
 router.post("/web/complete-profile", authRateLimit("profile",10), protectRoute, webCompleteProfile);
+router.patch("/web/profile/photo",protectRoute,authRateLimit("customer-photo",20),updateCustomerPhoto);
 router.get("/web/me", protectRoute, webMe);
 
 router.post("/register", authRateLimit("/register", 10), signup);
