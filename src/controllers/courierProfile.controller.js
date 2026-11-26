@@ -1,7 +1,8 @@
+import Order from "../models/order.model.js";
 import User from "../models/user.model.js";
 import { fail, serverError } from "../utils/http.js";
 
-export const publicProfile = u => ({
+const publicProfile = u => ({
   displayName: u.displayName || u.username,
   email: u.email,
   phone: u.phone || "",
@@ -9,8 +10,20 @@ export const publicProfile = u => ({
   profileImage: u.profileImage || "",
 });
 
-export function getCourierProfile(req,res) {
-  return res.json({profile:publicProfile(req.user)});
+async function account(user){
+  const rows=await Order.aggregate([
+    {$match:{courier:user._id}},
+    {$group:{_id:"$status",count:{$sum:1}}}
+  ]);
+  const counts=Object.fromEntries(rows.map(row=>[row._id,row.count]));
+  const completed=counts.delivered||0;
+  const cancelled=counts.cancelled||0;
+  const remaining=(counts.placed||0)+(counts.preparing||0)+(counts.out_for_delivery||0);
+  return {...publicProfile(user),counts:{completed,remaining,cancelled}};
+}
+
+export async function getCourierProfile(req,res) {
+  return res.json({profile:await account(req.user)});
 }
 
 export async function updateCourierProfile(req,res) {
@@ -26,7 +39,7 @@ export async function updateCourierProfile(req,res) {
       {$set:{profileImage}},
       {new:true,runValidators:true});
     if(!user)return fail(res,404,"Courier not found");
-    return res.json({profile:publicProfile(user)});
+    return res.json({profile:await account(user)});
   }catch(e){
     if(e.code===11000)return fail(res,409,"Phone already exists");
     return serverError(res,e,"updateCourierProfile");
