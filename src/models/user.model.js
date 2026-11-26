@@ -23,6 +23,7 @@ const userSchema = new mongoose.Schema(
       required: [true, "password is required"],
       minlength: 6,
     },
+    courierResidence: { type: String, maxlength: 200 },
     profileImage: {
       type: String,
       default: "",
