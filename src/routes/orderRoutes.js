@@ -1,3 +1,5 @@
+import {getCourierProfile,updateCourierProfile} from "../controllers/courierProfile.controller.js";
+import {authRateLimit} from "../middleware/authRateLimit.js";
 import {setCourierDisabled,createCourier,listCouriers,assignCourier,listCourierOrders,reportDelivered,approveDelivery} from "../controllers/delivery.controller.js";
 import express from "express";
 import { protectRoute, adminRoute } from "../middleware/auth.middleware.js";
@@ -16,6 +18,8 @@ const courierOnly=(req,res,next)=>req.user.role==="delivery"?next():res.status(4
 router.get("/couriers",adminRoute,listCouriers);
 router.post("/couriers",adminRoute,createCourier);
 router.patch("/couriers/:id/disabled",adminRoute,setCourierDisabled);
+router.get("/courier/profile",courierOnly,getCourierProfile);
+router.patch("/courier/profile",courierOnly,authRateLimit("courier-profile",20),updateCourierProfile);
 router.get("/courier/my",courierOnly,listCourierOrders);
 router.patch("/:id/assign",adminRoute,assignCourier);
 router.patch("/:id/report-delivered",courierOnly,reportDelivered);
