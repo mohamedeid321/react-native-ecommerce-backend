@@ -26,8 +26,9 @@ export const listCourierOrders=async(req,res)=>{
  const filter={courier:req.user._id,deliveryDate:date};
  if(req.query.overdue==="true"){filter.deliveryDate={$lt:today()};filter.status={$in:["placed","preparing","out_for_delivery"]};}
  if(req.query.status!==undefined){if(!["placed","preparing","out_for_delivery","delivered","cancelled"].includes(req.query.status))return fail(res,400,"Invalid status");if(req.query.overdue==="true"&&["delivered","cancelled"].includes(req.query.status))return fail(res,400,"Invalid overdue status");filter.status=req.query.status;}
+ if(req.query.history==='true'){delete filter.deliveryDate;filter.status='delivered';}
  const page=Math.min(10000,Math.max(1,parseInt(req.query.page)||1));
- const orders=await Order.find(filter).sort({deliveryDate:1,routeSequence:1,createdAt:1}).skip((page-1)*50).limit(50);
+ const orders=await Order.find(filter).sort(req.query.history==='true'?{approvedAt:-1,_id:-1}:{deliveryDate:1,routeSequence:1,createdAt:1}).skip((page-1)*50).limit(50);
  res.json({success:true,orders,page});
  }catch(e){serverError(res,e,"listCourierOrders");}
 };
