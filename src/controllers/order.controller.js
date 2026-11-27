@@ -204,9 +204,13 @@ export async function listGuestOrdersByPhone(req,res){
  const orders=await Order.find({source:'guest',$or:[
   {_id:{$in:contacts.map(contact=>contact._id)},guestContactExpiresAt:{$gt:now}},
   {guestContactExpiresAt:{$exists:false},'delivery.phone1':{$in:[phone,'+2'+phone,'002'+phone]},createdAt:{$gte:guestContactCutoff(now.getTime())}},
- ]}).sort({createdAt:-1}).limit(25).select('status -_id').lean();
- const statuses=[...new Set(orders.map(order=>order.status).filter(status=>ORDER_STATUSES.includes(status)))];
- return res.json({hasOrders:statuses.length>0,statuses});
+ ]}).sort({createdAt:-1}).limit(25).select('status statusHistory.status courierDeliveredAt -_id').lean();
+ const tracking=orders.filter(order=>ORDER_STATUSES.includes(order.status)).map(order=>({
+  status:order.status,
+  statusHistory:[...new Set((order.statusHistory||[]).map(event=>event.status).filter(status=>ORDER_STATUSES.includes(status)))].map(status=>({status})),
+  courierDeliveredAt:Boolean(order.courierDeliveredAt),
+ }));
+ return res.json({hasOrders:tracking.length>0,statuses:[...new Set(tracking.map(order=>order.status))],tracking});
 }
 
 export async function cancelGuestOrder(req,res){
