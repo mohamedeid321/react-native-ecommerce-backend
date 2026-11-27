@@ -175,8 +175,31 @@ export async function getGuestTracking(req,res){
  res.set('Cache-Control','no-store');
  const order=await findGuestTrackingOrder(req.body);
  if(!order)return fail(res,404,'رابط التتبع غير صالح أو انتهت صلاحيته');
+ return res.json({order:publicGuestTracking(order)});
+}
+
+function publicGuestTracking(order){
  const {orderNumber,status,statusHistory,createdAt,deliveryDate,deliverySlot,courierDeliveredAt}=order;
- return res.json({order:{orderNumber,status,statusHistory,createdAt,deliveryDate,deliverySlot,courierDeliveredAt}});
+ return {orderNumber,status,statusHistory,createdAt,deliveryDate,deliverySlot,courierDeliveredAt};
+}
+
+export async function listGuestOrdersByPhone(req,res){
+ res.set('Cache-Control','no-store');
+ const phone=checkoutPhone(req.body?.phone);
+ if(!/^01[0125]\d{8}$/.test(phone))return fail(res,400,'اكتب رقم الموبايل المسجّل في الطلب');
+ const grants=req.body?.grants;
+ if(!Array.isArray(grants)||grants.length>30)return fail(res,400,'بيانات التتبّع غير صحيحة');
+ const keys=new Map();
+ for(const grant of grants){
+  if(!Number.isSafeInteger(grant?.orderNumber)||grant.orderNumber<=0||typeof grant.token!=='string'||!/^[a-f0-9]{64}$/.test(grant.token))
+   return fail(res,400,'بيانات التتبّع غير صحيحة');
+  keys.set(grant.orderNumber,grant.token);
+ }
+ if(!keys.size)return res.json({orders:[]});
+ const orders=await Order.find({source:'guest',orderNumber:{$in:[...keys.keys()]},'delivery.phone1':{$in:[phone,'+2'+phone,'002'+phone]},createdAt:{$gte:trackingCutoff()}})
+  .select('orderNumber source status statusHistory createdAt deliveryDate deliverySlot courierDeliveredAt +checkoutKey')
+  .sort({createdAt:-1}).lean();
+ return res.json({orders:orders.filter(o=>matchesGuestToken(guestTrackingToken(o),keys.get(o.orderNumber))).map(publicGuestTracking)});
 }
 
 export async function cancelGuestOrder(req,res){

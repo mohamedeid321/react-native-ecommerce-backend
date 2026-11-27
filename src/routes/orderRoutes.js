@@ -5,7 +5,7 @@ import {updateCourier,setCourierDisabled,removeCourier,createCourier,listCourier
 import express from "express";
 import { protectRoute, adminRoute } from "../middleware/auth.middleware.js";
 import {
-  createOrder,quoteOrder,createGuestOrder,quoteGuestOrder,getGuestTracking,cancelGuestOrder,
+  createOrder,quoteOrder,createGuestOrder,quoteGuestOrder,getGuestTracking,cancelGuestOrder,listGuestOrdersByPhone,
   getMyOrders,
   getOrderById,
   cancelOrder,
@@ -16,6 +16,7 @@ import {
 const router = express.Router();
 router.post("/guest/quote",authRateLimit("guest-quote",30),quoteGuestOrder);
 router.post("/guest",authRateLimit("guest-order",12),createGuestOrder);
+router.post("/guest/lookup",authRateLimit("guest-phone-tracking",90),listGuestOrdersByPhone);
 router.post("/guest/track",authRateLimit("guest-tracking",120),getGuestTracking);
 router.post("/guest/cancel",authRateLimit("guest-cancel",20),cancelGuestOrder);
 router.post("/guest/recover",authRateLimit("guest-recover",5),requestGuestTracking);
