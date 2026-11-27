@@ -1,9 +1,10 @@
+import {hasAdminPermission} from '../config/adminPermissions.js';
 import Notification from "../models/notification.model.js";
 import PushToken from "../models/pushToken.model.js";
 import { fail, isValidId, serverError } from "../utils/http.js";
 
 const mineFilter = (user) =>
-  user.role === "admin" ? { $or: [{ user: user._id }, { audience: "admin" }] } : { user: user._id };
+  hasAdminPermission(user,"notifications.read") ? { $or: [{ user: user._id }, { audience: "admin" }] } : { user: user._id };
 
 const present = (n, userId) => ({
   _id: n._id,
@@ -23,7 +24,7 @@ export const registerToken = async (req, res) => {
     const doc = (await PushToken.findOne({ token })) || new PushToken({ token });
     doc.set({
       user: req.user._id,
-      role: req.user.role === "admin" ? "admin" : "customer",
+      role: hasAdminPermission(req.user,"notifications.read") ? "admin" : "customer",
       platform: String(req.body.platform || ""),
     });
     await doc.save();
@@ -80,7 +81,7 @@ export const markOneRead = async (req, res) => {
   try {
     const { id } = req.params;
     const n = isValidId(id) ? await Notification.findById(id) : null;
-    const mine = n && (String(n.user) === String(req.user._id) || (n.audience === "admin" && req.user.role === "admin"));
+    const mine = n && (String(n.user) === String(req.user._id) || (n.audience === "admin" && hasAdminPermission(req.user,"notifications.read")));
     if (!mine) return fail(res, 404, "الإشعار غير موجود");
     await markRead([n], req.user._id);
     res.json({ success: true });
@@ -88,3 +89,4 @@ export const markOneRead = async (req, res) => {
     serverError(res, error, "markOneRead");
   }
 };
+

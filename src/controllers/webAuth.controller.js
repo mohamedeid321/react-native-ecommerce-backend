@@ -27,7 +27,7 @@ export async function webRegister(req,res) {
   }
 }
 const store = () => createSessionStore(getRedis());
-export const publicUser = u => ({ id: u.id, username: u.username, displayName:u.displayName, email: u.email, phone: u.phone, role: u.role, profileImage: u.profileImage || ("https://api.dicebear.com/9.x/shapes/svg?seed="+u.id) });
+export const publicUser = u => ({ id: u.id, username: u.username, displayName:u.displayName, email: u.email, phone: u.phone, role: u.role, ...(u.role==="admin"?{adminPermissions:u.adminPermissions,adminJob:u.adminJob}:{}), profileImage: u.profileImage || ("https://api.dicebear.com/9.x/shapes/svg?seed="+u.id) });
 export async function webLogin(req,res,adminOnly=false) {
   const { email, phone, identifier, password } = req.body || {};
   const loginId = identifier ?? email ?? phone;

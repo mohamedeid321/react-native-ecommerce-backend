@@ -1,3 +1,4 @@
+import {hasAdminPermission} from '../config/adminPermissions.js';
 import {attachGuestContacts} from '../utils/guestContact.js';
 import mongoose from 'mongoose';
 import {getRedis} from "../lib/redis.js";
@@ -8,7 +9,7 @@ import {fail,isValidId,serverError} from "../utils/http.js";
 import {notifyUser} from "../utils/notify.js";
 const today=()=>new Intl.DateTimeFormat("en-CA",{timeZone:"Africa/Cairo",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
 export const listCouriers=async(req,res)=>{
- try{res.json({success:true,couriers:await User.find({role:"delivery",archivedAt:null}).select("username displayName email phone disabled").limit(200)});}catch(e){serverError(res,e,"listCouriers");}
+ try{res.json({success:true,couriers:await User.find({role:"delivery",archivedAt:null}).select(hasAdminPermission(req.user,"couriers.read","couriers.create","couriers.edit","couriers.delete")?"username displayName email phone disabled":"username displayName disabled").limit(200)});}catch(e){serverError(res,e,"listCouriers");}
 };
 export const assignCourier=async(req,res)=>{
  try{

@@ -1,3 +1,4 @@
+import {hasAdminPermission} from '../config/adminPermissions.js';
 import GuestContact from '../models/guestContact.model.js';
 import {attachGuestContacts,guestContactExpiry,guestContactCutoff,guestPhoneFingerprint} from '../utils/guestContact.js';
 import {guestTrackingToken,matchesGuestToken,trackingCutoff} from '../utils/guestTracking.js';
@@ -249,7 +250,7 @@ export const getOrderById = async (req, res) => {
   try {
     const { id } = req.params;
     const order = isValidId(id) ? await Order.findById(id) : null;
-    const allowed = order && (req.user.role === "admin" || String(order.user) === String(req.user._id));
+    const allowed = order && (hasAdminPermission(req.user,"orders.read","orders.update","orders.cancel","dispatch.read","dispatch.assign","dispatch.approve") || String(order.user) === String(req.user._id));
     if (!allowed) return fail(res, 404, "الطلب غير موجود");
     const [visibleOrder]=req.user.role==="admin"?await attachGuestContacts([order]):[order];
     res.json({ success: true, order:visibleOrder });

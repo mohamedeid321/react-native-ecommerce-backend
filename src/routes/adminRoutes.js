@@ -1,3 +1,4 @@
+import {ownerOnly,listAdminTeam,addAdminTeamMember,updateAdminTeamMember,renewStaffActivation} from '../controllers/adminTeam.controller.js';
 import {authRateLimit} from '../middleware/authRateLimit.js';
 import {resetStoreData} from '../controllers/adminReset.controller.js';
 import {listGuestTrackingRequests,closeGuestTrackingRequest} from '../controllers/guestTrackingRecovery.controller.js';
@@ -14,6 +15,10 @@ import {round2} from "../utils/pricing.js";
 const router=express.Router();
 router.use(protectRoute,adminRoute);
 router.use((req,res,next)=>{res.set("Cache-Control","no-store");next();});
+router.get('/team',ownerOnly,listAdminTeam);
+router.post('/team',ownerOnly,authRateLimit('staff-create',15),addAdminTeamMember);
+router.patch('/team/:id',ownerOnly,updateAdminTeamMember);
+router.post('/team/:id/activation',ownerOnly,authRateLimit('staff-activate',15),renewStaffActivation);
 router.post('/reset-data',authRateLimit('admin-reset',5),resetStoreData);
 router.get('/guest-tracking-requests',listGuestTrackingRequests);
 router.patch('/guest-tracking-requests/:id',closeGuestTrackingRequest);

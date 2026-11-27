@@ -1,3 +1,4 @@
+import {canUseAdminRoute} from '../config/adminPermissions.js';
 import jwt from "jsonwebtoken";
 import User from "../models/user.model.js";
 import { readCookie } from "../utils/authCookies.js";
@@ -31,4 +32,4 @@ export const protectRoute = async (req,res,next) => {
     next();
   } catch { return res.status(503).json({message:"Authentication service unavailable"}); }
 };
-export const adminRoute = (req,res,next) => req.user?.role === "admin" ? next() : res.status(403).json({message:"Access denied - Admin only"});
+export const adminRoute = (req,res,next) => canUseAdminRoute(req) ? next() : res.status(403).json({message:"الحساب غير مصرح له بالإجراء ده"});

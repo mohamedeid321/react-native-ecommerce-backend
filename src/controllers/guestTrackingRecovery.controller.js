@@ -1,3 +1,4 @@
+import {hasAdminPermission} from '../config/adminPermissions.js';
 import Notification from '../models/notification.model.js';
 import Order from '../models/order.model.js';
 import {checkoutPhone} from '../utils/checkoutAddress.js';
@@ -16,7 +17,7 @@ export async function listGuestTrackingRequests(req,res){
   const phone=checkoutPhone(order.delivery.phone1),token=guestTrackingToken(order);
   if(!token)continue;
   if(!byPhone.has(phone))byPhone.set(phone,[]);
-  byPhone.get(phone).push({orderNumber:order.orderNumber,status:order.status,token});
+  byPhone.get(phone).push({orderNumber:order.orderNumber,status:order.status,...(hasAdminPermission(req.user,'tracking.edit')?{token}:{})});
  }
  return res.json({requests:requests.map(r=>({id:r._id,phone:r.body,orders:byPhone.get(r.body)||[]}))});
 }
