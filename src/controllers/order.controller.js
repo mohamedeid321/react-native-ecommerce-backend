@@ -57,7 +57,7 @@ function checkout({guest=false,quote=false}={}){
   const user=req.user;
   const identity=guest?{source:'guest',user:null}:{user:user._id};
   const prior={...identity,checkoutKey:key};
-  const reply=(order,status)=>res.status(status).json({success:true,message:'تم استلام طلبك',order:guest?receipt(order,key):order});
+  const reply=(order,status)=>res.status(status).json({success:true,message:'تم استلام طلبك. سيتواصل معك فريق خدمة العملاء لتأكيد الطلب قبل بدء التجهيز.',order:guest?receipt(order,key):order});
   const reject=(status,message)=>{throw Object.assign(new Error(message),{checkoutStatus:status})};
   let session,release,order,preview,replayed;
   try{
@@ -134,6 +134,7 @@ function checkout({guest=false,quote=false}={}){
      if(!result.modifiedCount)reject(409,'المخزون غير كافٍ');
     }
     const address=Object.fromEntries(['city','governorate','neighborhood','building','apartment','floor','street','landmark','phone1','phone2'].map(k=>[k,delivery[k]]));
+    address.whatsapp=delivery.whatsapp||address.phone1;
     const customer=guest?{username:name}:{username:user.displayName||user.username,email:user.email};
     [order]=await Order.create([{orderNumber:100000+counter.seq,...identity,accountPhone:accountPhone||undefined,items,...totals,delivery:address,customer,status:'placed',statusHistory:[{status:'placed'}],checkoutKey:key,deliveryDate,paymentMethod:'cod',paymentStatus:'pending'}],{session});
     if(cart){cart.items=[];await cart.save({session})}

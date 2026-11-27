@@ -46,6 +46,7 @@ const orderSchema = new mongoose.Schema(
       landmark: String,
       phone1: String,
       phone2: String,
+      whatsapp: String,
     },
     customer: { username: String, email: String }, // للعرض عند الـ admin
     status: { type: String, enum: ORDER_STATUSES, default: "placed", index: true },

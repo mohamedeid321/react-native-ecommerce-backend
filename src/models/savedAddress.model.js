@@ -4,6 +4,7 @@ import {createHash} from 'node:crypto';
 export const addressFields=['city','governorate','neighborhood','building','apartment','floor','street','landmark','phone1','phone2'];
 export function addressRecord(address){
  const data=Object.fromEntries(addressFields.map(key=>[key,address[key]??'']));
+ if(address.whatsapp)data.whatsapp=address.whatsapp;
  const key=createHash('sha256').update(JSON.stringify(data)).digest('hex');
  return {...data,key};
 }

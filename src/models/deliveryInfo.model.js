@@ -14,9 +14,11 @@ const deliveryInfoSchema = new mongoose.Schema(
     street: { type: String, trim: true, default: "" }, // اختياري
     landmark: { type: String, trim: true, default: "" }, // اختياري
     phone1: { type: String, required: true, trim: true },
+    whatsapp: {type:String,trim:true},
     phone2: { type: String, trim: true, default: "" }, // اختياري
   },
   { timestamps: true },
 );
 
 export default mongoose.models.DeliveryInfo || mongoose.model("DeliveryInfo", deliveryInfoSchema);
+

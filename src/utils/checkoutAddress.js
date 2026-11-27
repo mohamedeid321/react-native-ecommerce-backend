@@ -16,6 +16,8 @@ export function checkoutAddress(input){
  if(!data.building||!data.apartment||!data.floor)throw Error('أكمل رقم العمارة والدور والشقة');
  data.phone1=checkoutPhone(input?.phone1);
  data.phone2=checkoutPhone(input?.phone2);
+ data.whatsapp=checkoutPhone(input?.whatsapp)||data.phone1;
  if(!phonePattern.test(data.phone1)||data.phone2&&!phonePattern.test(data.phone2))throw Error('راجع أرقام التليفون');
+ if(!phonePattern.test(data.whatsapp))throw Error('راجع رقم واتساب');
  return data;
 }

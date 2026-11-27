@@ -1,3 +1,4 @@
+import {checkoutPhone} from '../utils/checkoutAddress.js';
 import mongoose from 'mongoose';
 import SavedAddress,{addressRecord} from '../models/savedAddress.model.js';
 import DeliveryInfo from "../models/deliveryInfo.model.js";
@@ -36,6 +37,7 @@ export const saveDeliveryInfo = async (req, res) => {
       landmark: text(b.landmark),
       phone1: toEnglishDigits(b.phone1),
       phone2: toEnglishDigits(b.phone2),
+      whatsapp: checkoutPhone(b.whatsapp),
     };
 
     if (!CITIES.includes(data.city)) return fail(res, 400, "اختار المدينة");
@@ -47,6 +49,8 @@ export const saveDeliveryInfo = async (req, res) => {
     if (!data.floor) return fail(res, 400, "اكتب رقم الدور");
     if (!PHONE_RE.test(data.phone1)) return fail(res, 400, "رقم الهاتف 1 غير صحيح");
     if (data.phone2 && !PHONE_RE.test(data.phone2)) return fail(res, 400, "رقم الهاتف 2 غير صحيح");
+
+    if (data.whatsapp && !PHONE_RE.test(data.whatsapp)) return fail(res, 400, "رقم واتساب غير صحيح");
 
     const selected=addressRecord(data);
     await mongoose.connection.transaction(async session=>{
