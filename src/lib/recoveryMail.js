@@ -32,17 +32,9 @@ export function recoveryMailer(env=process.env){
 
 const escapeHtml=value=>value.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
-export function recoveryMessage(origin,token,env=process.env){
+export function recoveryMessage(origin,token){
  const link=origin+'/login#reset='+token;
  const safeLink=escapeHtml(link);
- const base=escapeHtml(origin);
- const phone=(env.RESET_SUPPORT_WHATSAPP||'').replace(/[+\s()-]/g,'');
- const handle=(env.RESET_SUPPORT_INSTAGRAM||'').trim().replace(/^@/,'');
- const socials=[
-  ['فيسبوك','https://www.facebook.com/profile.php?id=61596476945722'],
-  ['واتساب',/^[1-9]\d{7,14}$/.test(phone)?'https://wa.me/'+phone:''],
-  ['إنستجرام',/^[a-zA-Z0-9_.]{1,30}$/.test(handle)?'https://www.instagram.com/'+handle+'/':''],
- ].filter(([,url])=>url).map(([label,url])=>`<a style="display:inline-block;margin:6px;color:#fff4a6" href="${escapeHtml(url)}">${label}</a>`).join('');
  return {
   subject:'إعادة تعيين كلمة المرور لحسابك في لقطة',
   text:'أهلًا من لقطة.\n\nافتح الرابط التالي لاختيار كلمة مرور جديدة. الرابط صالح لمدة ١٥ دقيقة ويُستخدم مرة واحدة.\n'+link+'\n\nلو ما طلبتش التغيير، تجاهل الرسالة.\nفريق لقطة',
@@ -57,10 +49,8 @@ export function recoveryMessage(origin,token,env=process.env){
   <p style="margin:18px 0 0;color:#486354">لو ما طلبتش تغيير كلمة المرور، تجاهل الرسالة.</p>
   </td></tr>
   <tr><td align="center" style="background:#e8f2e6;padding:16px">
-  <img src="${base}/assets/web/drawer-fruit-basket.webp" width="116" alt="" style="display:block;margin:0 auto 8px">
-  <strong>من لقطة، فاكهة طازجة لحد باب بيتك</strong>
   </td></tr>
-  <tr><td align="center" bgcolor="#06462c" style="padding:12px;color:white">فريق لقطة<br>${socials}</td></tr>
+  <tr><td align="center" bgcolor="#06462c" style="padding:12px;color:white">فريق لقطة</td></tr>
   </table></td></tr></table></body></html>`,
  };
 }
