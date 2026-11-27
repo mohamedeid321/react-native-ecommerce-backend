@@ -4,7 +4,7 @@ import {updateCourier,setCourierDisabled,createCourier,listCouriers,assignCourie
 import express from "express";
 import { protectRoute, adminRoute } from "../middleware/auth.middleware.js";
 import {
-  createOrder,quoteOrder,createGuestOrder,quoteGuestOrder,
+  createOrder,quoteOrder,createGuestOrder,quoteGuestOrder,getGuestTracking,
   getMyOrders,
   getOrderById,
   cancelOrder,
@@ -15,6 +15,7 @@ import {
 const router = express.Router();
 router.post("/guest/quote",authRateLimit("guest-quote",30),quoteGuestOrder);
 router.post("/guest",authRateLimit("guest-order",12),createGuestOrder);
+router.post("/guest/track",authRateLimit("guest-tracking",120),getGuestTracking);
 router.use(protectRoute);
 const courierOnly=(req,res,next)=>req.user.role==="delivery"?next():res.status(403).json({message:"Courier only"});
 router.get("/couriers",adminRoute,listCouriers);

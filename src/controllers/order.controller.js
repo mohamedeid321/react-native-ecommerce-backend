@@ -1,3 +1,4 @@
+import {guestTrackingToken,matchesGuestToken,trackingCutoff} from '../utils/guestTracking.js';
 import {createHash} from 'node:crypto';
 import {checkoutAddress,checkoutPhone} from '../utils/checkoutAddress.js';
 import SavedAddress,{addressRecord} from '../models/savedAddress.model.js';
@@ -33,7 +34,7 @@ const restock = (items) =>
 
 // ---------------- العميل ----------------
 
-const receipt=order=>({orderNumber:order.orderNumber,total:order.total,deliveryDate:order.deliveryDate,source:order.source});
+const receipt=(order,key)=>({orderNumber:order.orderNumber,total:order.total,deliveryDate:order.deliveryDate,source:order.source,trackingToken:guestTrackingToken(order,key)});
 
 function guestLines(lines){
  if(!Array.isArray(lines)||!lines.length||lines.length>50)throw Error('راجع المنتجات الموجودة في السلة');
@@ -56,7 +57,7 @@ function checkout({guest=false,quote=false}={}){
   const user=req.user;
   const identity=guest?{source:'guest',user:null}:{user:user._id};
   const prior={...identity,checkoutKey:key};
-  const reply=(order,status)=>res.status(status).json({success:true,message:'تم استلام طلبك',order:guest?receipt(order):order});
+  const reply=(order,status)=>res.status(status).json({success:true,message:'تم استلام طلبك',order:guest?receipt(order,key):order});
   const reject=(status,message)=>{throw Object.assign(new Error(message),{checkoutStatus:status})};
   let session,release,order,preview,replayed;
   try{
@@ -156,6 +157,20 @@ export const createOrder=checkout();
 export const quoteOrder=checkout({quote:true});
 export const createGuestOrder=checkout({guest:true});
 export const quoteGuestOrder=checkout({guest:true,quote:true});
+
+export async function getGuestTracking(req,res){
+ res.set('Cache-Control','no-store');
+ const {orderNumber,token}=req.body??{};
+ if(typeof orderNumber!=='string'||!/^\d{1,12}$/.test(orderNumber)||
+    typeof token!=='string'||! /^[a-f0-9]{64}$/.test(token))
+  return fail(res,404,'رابط التتبع غير صالح أو انتهت صلاحيته');
+ const order=await Order.findOne({orderNumber:Number(orderNumber),source:'guest',createdAt:{$gte:trackingCutoff()}})
+  .select('orderNumber source status statusHistory createdAt deliveryDate courierDeliveredAt +checkoutKey').lean();
+ if(!order||!matchesGuestToken(guestTrackingToken(order),token))
+  return fail(res,404,'رابط التتبع غير صالح أو انتهت صلاحيته');
+ const {status,statusHistory,createdAt,deliveryDate,courierDeliveredAt}=order;
+ return res.json({order:{orderNumber:order.orderNumber,status,statusHistory,createdAt,deliveryDate,courierDeliveredAt}});
+}
 
 const pageParams = (query, defaultLimit = 20) => {
   const page = Math.max(1, parseInt(query.page) || 1);
