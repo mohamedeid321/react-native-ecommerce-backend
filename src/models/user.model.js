@@ -14,6 +14,7 @@ const userSchema = new mongoose.Schema(
       required: [true, "email is required"],
       unique: true,
     },
+    archivedAt: Date,
     disabled: { type: Boolean, default: false },
     mfaSecret: { type: String, select: false },
     googleSub: { type: String, unique: true, sparse: true, select: false },

@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import {getRedis} from "../lib/redis.js";
 import {createSessionStore} from "../lib/sessionStore.js";
 import Order from "../models/order.model.js";
@@ -6,15 +7,18 @@ import {fail,isValidId,serverError} from "../utils/http.js";
 import {notifyUser} from "../utils/notify.js";
 const today=()=>new Intl.DateTimeFormat("en-CA",{timeZone:"Africa/Cairo",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
 export const listCouriers=async(req,res)=>{
- try{res.json({success:true,couriers:await User.find({role:"delivery"}).select("username displayName email phone disabled").limit(200)});}catch(e){serverError(res,e,"listCouriers");}
+ try{res.json({success:true,couriers:await User.find({role:"delivery",archivedAt:null}).select("username displayName email phone disabled").limit(200)});}catch(e){serverError(res,e,"listCouriers");}
 };
 export const assignCourier=async(req,res)=>{
  try{
  const {id}=req.params,{courierId,routeSequence}=req.body??{};
  if(routeSequence!==undefined&&(!Number.isInteger(routeSequence)||routeSequence<1||routeSequence>10000))return fail(res,400,"Invalid route sequence");
  if(!isValidId(id)||!isValidId(courierId))return fail(res,400,"Invalid ID");
- if(!await User.exists({_id:courierId,role:"delivery",disabled:{$ne:true}}))return fail(res,404,"Courier not found");
- const order=await Order.findOneAndUpdate({_id:id,status:{$in:["placed","preparing","out_for_delivery"]},courierDeliveredAt:null},{$set:{courier:courierId,assignedAt:new Date(),...(routeSequence===undefined?{}:{routeSequence})}},{new:true});
+ const order=await mongoose.connection.transaction(async session=>{
+  const courier=await User.findOneAndUpdate({_id:courierId,role:"delivery",archivedAt:null,disabled:{$ne:true}},{$inc:{__v:1}},{session});
+  if(!courier)return null;
+  return Order.findOneAndUpdate({_id:id,status:{$in:["placed","preparing","out_for_delivery"]},courierDeliveredAt:null},{$set:{courier:courierId,assignedAt:new Date(),...(routeSequence===undefined?{}:{routeSequence})}},{new:true,session});
+ });
  if(!order)return fail(res,409,"Order cannot be assigned");
  res.json({success:true,order});
  }catch(e){serverError(res,e,"assignCourier");}
@@ -55,7 +59,7 @@ export const createCourier=async(req,res)=>{
  try{
  const {username,email,phone,password}=req.body??{};
  if(typeof username!=="string"||username.trim().length<3||username.length>80||typeof email!=="string"||email.length>254||!/^\S+@\S+\.\S+$/.test(email)||typeof phone!=="string"||!/^\+201[0125]\d{8}$/.test(phone)||typeof password!=="string"||password.length<12||Buffer.byteLength(password)>72)return fail(res,400,"Invalid courier details");
- const user=await User.create({username:username.trim(),email:email.trim().toLowerCase(),phone,password,role:"delivery"});
+ const user=await User.create({username:username.trim(),email:email.trim().toLowerCase(),phone,password,role:"delivery",archivedAt:null});
  res.status(201).json({success:true,courier:{id:user.id,username:user.username,email:user.email,phone:user.phone,role:user.role}});
  }catch(e){if(e.code===11000)return fail(res,409,"Account already exists");serverError(res,e,"createCourier");}
 };
@@ -64,12 +68,12 @@ export const setCourierDisabled=async(req,res)=>{
  try{
  const {id}=req.params,{disabled}=req.body??{};
  if(!isValidId(id)||typeof disabled!=="boolean")return fail(res,400,"Invalid courier status");
- const courier=await User.findOne({_id:id,role:"delivery"});
+ const courier=await User.findOne({_id:id,role:"delivery",archivedAt:null});
  if(!courier)return fail(res,404,"Courier not found");
  // Revoke before enabling; disable in Mongo first so access fails even if Redis is unavailable.
- if(disabled)await User.updateOne({_id:id,role:"delivery"},{$set:{disabled:true}});
+ if(disabled)await User.updateOne({_id:id,role:"delivery",archivedAt:null},{$set:{disabled:true}});
  await createSessionStore(getRedis()).revokeAll(courier.id);
- if(!disabled)await User.updateOne({_id:id,role:"delivery"},{$set:{disabled:false}});
+ if(!disabled)await User.updateOne({_id:id,role:"delivery",archivedAt:null},{$set:{disabled:false}});
  return res.json({success:true,disabled});
  }catch(e){serverError(res,e,"setCourierDisabled");}
 };
@@ -82,7 +86,7 @@ export async function updateCourier(req,res){
    (password!==undefined&&(typeof password!=="string"||password.length<12||Buffer.byteLength(password)>72))||
    (profileImage!==undefined&&(typeof profileImage!=="string"||profileImage.length>65000||(profileImage!==""&&!/^data:image\/jpeg;base64,[A-Za-z0-9+/]+=*$/.test(profileImage)))))return fail(res,400,"Invalid courier details");
  try{
-   const user=await User.findOne({_id:req.params.id,role:"delivery"});
+   const user=await User.findOne({_id:req.params.id,role:"delivery",archivedAt:null});
    if(!user)return fail(res,404,"Courier not found");
    const normalized=email.trim().toLowerCase();
    if(password||user.email!==normalized||user.phone!==phone)await createSessionStore(getRedis()).revokeAll(user.id);
@@ -92,4 +96,22 @@ export async function updateCourier(req,res){
    await user.save();
    return res.json({success:true});
  }catch(e){if(e.code===11000)return fail(res,409,"Account already exists");return serverError(res,e,"updateCourier");}
+}
+
+export async function removeCourier(req,res){
+ const id=req.params.id;
+ if(!isValidId(id))return res.sendStatus(404);
+ const result=await mongoose.connection.transaction(async session=>{
+  const courier=await User.findOneAndUpdate({_id:id,role:'delivery',archivedAt:null},{$set:{archivedAt:new Date(),disabled:true}},{session});
+  if(!courier)return 'missing';
+  if(await Order.exists({courier:id,status:{$in:['placed','preparing','out_for_delivery']}}).session(session)){
+   await User.updateOne({_id:id},{$set:{disabled:courier.disabled},$unset:{archivedAt:1}},{session});
+   return 'assigned';
+  }
+  return 'removed';
+ });
+ if(result==='missing')return res.sendStatus(404);
+ if(result==='assigned')return fail(res,409,'انقل طلبات المندوب الحالية لمندوب تاني الأول');
+ await createSessionStore(getRedis()).revokeAll(id).catch(()=>{});
+ return res.sendStatus(204);
 }

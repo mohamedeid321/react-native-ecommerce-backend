@@ -354,6 +354,7 @@ export const deleteProduct = async (req, res) => {
     }
 
     product.isActive = false;
+    product.archivedAt ??= new Date();
     await product.save();
     await publicCache.invalidate("catalog","search");
 

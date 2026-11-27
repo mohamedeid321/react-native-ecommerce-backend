@@ -33,6 +33,7 @@ const productSchema = new mongoose.Schema(
     },
     // نسبة الخصم % (السعر بعد الخصم بيتحسب في finalPrice)
     purchasePrice: { type: Number, min: 0, select: false },
+    archivedAt: Date,
     isActive: { type: Boolean, default: true },
     discount: {
       type: Number,

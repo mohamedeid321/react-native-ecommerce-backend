@@ -4,7 +4,7 @@ import mongoose from "mongoose";
 export async function listAdminProducts(req,res) {
  const page=Math.max(1,Math.min(10000,parseInt(req.query.page)||1));
  const limit=Math.max(1,Math.min(100,parseInt(req.query.limit)||30));
- const filter={};
+ const filter={archivedAt:null};
  if(req.query.visibility==="hidden") filter.isActive=false;
  if(req.query.visibility==="active") filter.isActive={$ne:false};
  if(typeof req.query.category==="string" && req.query.category!=="all") filter.category=req.query.category;
@@ -15,8 +15,9 @@ export async function listAdminProducts(req,res) {
 export async function setProductVisibility(req,res) {
  if(!mongoose.isValidObjectId(req.params.id)) return res.sendStatus(404);
  if(typeof req.body?.isActive!=="boolean") return res.sendStatus(400);
- const product=await Product.findByIdAndUpdate(req.params.id,{$set:{isActive:req.body.isActive}},{new:true,runValidators:true});
+ const product=await Product.findOneAndUpdate({_id:req.params.id,archivedAt:null},{$set:{isActive:req.body.isActive}},{new:true,runValidators:true});
  if(!product) return res.sendStatus(404);
  await publicCache.invalidate("catalog","search");
  res.json({success:true,product});
 }
+

@@ -1,3 +1,6 @@
+import {authRateLimit} from '../middleware/authRateLimit.js';
+import {resetStoreData} from '../controllers/adminReset.controller.js';
+import {listGuestTrackingRequests,closeGuestTrackingRequest} from '../controllers/guestTrackingRecovery.controller.js';
 import express from "express";
 import User from "../models/user.model.js";
 import Order from "../models/order.model.js";
@@ -11,6 +14,9 @@ import {round2} from "../utils/pricing.js";
 const router=express.Router();
 router.use(protectRoute,adminRoute);
 router.use((req,res,next)=>{res.set("Cache-Control","no-store");next();});
+router.post('/reset-data',authRateLimit('admin-reset',5),resetStoreData);
+router.get('/guest-tracking-requests',listGuestTrackingRequests);
+router.patch('/guest-tracking-requests/:id',closeGuestTrackingRequest);
 const paging=q=>({page:Math.min(10000,Math.max(1,parseInt(q.page)||1)),limit:Math.min(100,Math.max(1,parseInt(q.limit)||20))});
 const customerFields="username displayName email phone disabled createdAt";
 router.get("/dashboard",async(req,res)=>{
@@ -65,3 +71,4 @@ router.get("/customers/:id",async(req,res)=>{
  }catch(e){serverError(res,e,"customerDetails");}
 });
 export default router;
+

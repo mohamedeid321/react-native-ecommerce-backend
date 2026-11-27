@@ -71,8 +71,8 @@ function checkout({guest=false,quote=false}={}){
    if(guest){
     if(!req.body?.delivery&&!quote)return fail(res,404,'لم يتم تسجيل الطلب السابق');
     name=typeof req.body?.name==='string'?req.body.name.trim().replace(/\s+/g,' '):'';
-    if(name.length>100||name.split(' ').length<3||!name.split(' ').every(part=>/^\p{L}[\p{L}\p{M}'’.-]*$/u.test(part)))
-     return fail(res,400,'اكتب اسمك الثلاثي');
+    if(name.length>100||name.split(' ').length<2||!name.split(' ').every(part=>/^\p{L}[\p{L}\p{M}'’.-]*$/u.test(part)))
+     return fail(res,400,'اكتب اسمك الثنائي');
     try{info=checkoutAddress(req.body.delivery);lines=guestLines(req.body.items)}catch(e){return fail(res,400,e.message)}
    }
    release=await checkoutGate.acquire();
