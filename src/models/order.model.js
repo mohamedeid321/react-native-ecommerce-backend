@@ -6,7 +6,9 @@ import { ORDER_STATUSES } from "../config/shop.js";
 const orderSchema = new mongoose.Schema(
   {
     orderNumber: { type: Number, required: true, unique: true },
-    user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true, index: true },
+    user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: function(){return this.source!=='guest'}, index: true },
+    accountPhone: {type:String,select:false,index:true},
+    source: { type: String, enum: ['guest', 'account'], default: 'account' },
     items: [
       {
         _id: false,
@@ -53,9 +55,11 @@ const orderSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
+orderSchema.index({"delivery.phone1":1});
 orderSchema.index({ createdAt: -1 });
 orderSchema.index({courier:1,deliveryDate:1,status:1});
 orderSchema.index({user:1,checkoutKey:1},{unique:true,partialFilterExpression:{checkoutKey:{$type:"string"}}});
-orderSchema.set("toJSON",{transform(doc,ret){delete ret.checkoutKey;return ret;}});
+orderSchema.set("toJSON",{transform(doc,ret){delete ret.checkoutKey;delete ret.accountPhone;return ret;}});
 
 export default mongoose.models.Order || mongoose.model("Order", orderSchema);
+

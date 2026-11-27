@@ -46,7 +46,7 @@ export const approveDelivery=async(req,res)=>{
  if(!isValidId(req.params.id))return fail(res,400,"Invalid ID");
  const order=await Order.findOneAndUpdate({_id:req.params.id,status:"out_for_delivery",courierDeliveredAt:{$type:"date"},$expr:{$eq:["$collectedAmount","$total"]}},{$set:{status:"delivered",paymentStatus:"paid",approvedAt:new Date(),approvedBy:req.user._id},$push:{statusHistory:{status:"delivered",at:new Date()}}},{new:true});
  if(!order)return fail(res,409,"Delivery cannot be approved");
- await notifyUser(order.user,{title:"تم تسليم طلبك",body:"تم تأكيد تسليم طلبك",orderId:order._id}).catch(()=>{});
+ if(order.user)await notifyUser(order.user,{title:"تم تسليم طلبك",body:"تم تأكيد تسليم طلبك",orderId:order._id}).catch(()=>{});
  res.json({success:true,order});
  }catch(e){serverError(res,e,"approveDelivery");}
 };
