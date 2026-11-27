@@ -1,24 +1,41 @@
 import {randomBytes,createHash} from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import User from '../models/user.model.js';
-import {normalizePhone} from './webAuth.controller.js';
+import {normalizePhone, publicUser} from './webAuth.controller.js';
 import {getRedis} from '../lib/redis.js';
 import {createSessionStore} from '../lib/sessionStore.js';
 const emailOk=email=>typeof email==='string' && email.length<=254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 const hash=value=>createHash('sha256').update(value).digest('hex');
 
-export async function updateCustomer(req,res){
- if(req.user.role!=='customer')return res.sendStatus(403);
+export async function updateAccount(req,res){
+ if(!['customer','admin'].includes(req.user.role))return res.sendStatus(403);
  const {name,email,phone,currentPassword}=req.body??{};
+ const displayName=typeof name==='string'?name.trim():'';
+ const address=typeof email==='string'?email.trim().toLowerCase():'';
  const normalized=normalizePhone(phone);
- if(typeof name!=='string'||name.trim().length<2||name.length>80||!emailOk(email)||!normalized)return res.status(400).json({message:'راجع الاسم والبريد ورقم الهاتف'});
+ const phoneChanged=normalized ? normalized!==normalizePhone(req.user.phone) : (phone || '')!==(req.user.phone || '');
+ if(displayName.length<2||displayName.length>80||!emailOk(address)||(phoneChanged&&!normalized))
+  return res.status(400).json({message:'راجع الاسم والبريد ورقم الهاتف'});
  const user=await User.findById(req.user.id);
- const contactChanged=user.email!==email.trim().toLowerCase()||user.phone!==normalized;
- if(contactChanged && (typeof currentPassword!=='string'||Buffer.byteLength(currentPassword)>72||!await user.comparePassword(currentPassword)))return res.status(403).json({message:'أدخل كلمة المرور الحالية لتغيير بيانات الدخول'});
- user.displayName=name.trim();user.email=email.trim().toLowerCase();user.phone=normalized;
- if(contactChanged){user.resetDigest=undefined;user.resetExpires=undefined;}
- try{await user.save()}catch(e){if(e.code===11000)return res.status(409).json({message:'البريد أو الهاتف مستخدم بالفعل'});throw e}
- res.json({user:{id:user.id,username:user.username,displayName:user.displayName,email:user.email,phone:user.phone,role:user.role,profileImage:user.profileImage}});
+ if(!user||user.disabled||user.role!==req.user.role)return res.sendStatus(403);
+ const contactChanged=user.email!==address||phoneChanged;
+ if(contactChanged && (typeof currentPassword!=='string'||Buffer.byteLength(currentPassword)>72||!await user.comparePassword(currentPassword)))
+  return res.status(403).json({message:'أدخل كلمة المرور الحالية لتغيير بيانات الدخول'});
+ const fields={displayName};
+ if(user.email!==address)fields.email=address;
+ if(phoneChanged)fields.phone=normalized;
+ const filter={_id:user._id,role:user.role,disabled:{$ne:true},email:user.email,phone:user.phone??null};
+ const changes={$set:fields};
+ if(contactChanged)changes.$unset={resetDigest:1,resetExpires:1};
+ try{
+  const updated=await User.findOneAndUpdate(filter,changes,{new:true,runValidators:true});
+  if(!updated)return res.status(409).json({message:'البيانات اتغيرت، حدّث الصفحة وحاول تاني'});
+  return res.json({user:publicUser(updated)});
+ }catch(e){
+  if(e.code===11000)return res.status(409).json({message:'البريد أو الهاتف مستخدم بالفعل'});
+  if(e.name==='ValidationError')return res.status(400).json({message:'راجع البيانات المدخلة'});
+  throw e;
+ }
 }
 
 export async function forgotPassword(req,res){

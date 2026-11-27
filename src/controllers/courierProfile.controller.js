@@ -1,3 +1,4 @@
+import {normalizePhone} from "./webAuth.controller.js";
 import Order from "../models/order.model.js";
 import User from "../models/user.model.js";
 import { fail, serverError } from "../utils/http.js";
@@ -27,16 +28,28 @@ export async function getCourierProfile(req,res) {
 }
 
 export async function updateCourierProfile(req,res) {
-  const {profileImage}=req.body??{};
-  if(Object.keys(req.body??{}).some(key=>key!=="profileImage") || typeof profileImage!=="string")return fail(res,400,"Only the profile image can be changed");
-  if(profileImage!==""){
+  const {profileImage,displayName,phone}=req.body??{};
+  const fields={};
+  if(Object.keys(req.body??{}).some(key=>!["profileImage","displayName","phone"].includes(key)))return fail(res,400,"بيانات غير مسموح بتعديلها");
+  if(displayName!==undefined){
+    if(typeof displayName!=="string"||displayName.trim().length<2||displayName.trim().length>80)return fail(res,400,"راجع الاسم");
+    fields.displayName=displayName.trim();
+  }
+  if(phone!==undefined){
+    const normalized=normalizePhone(phone);
+    if(!normalized)return fail(res,400,"راجع رقم التليفون");
+    fields.phone=normalized;
+  }
+  if(profileImage!==undefined)fields.profileImage=profileImage;
+  if(profileImage!==undefined&&profileImage!==""){
     if(typeof profileImage!=="string"||profileImage.length>65000||!/^data:image\/jpeg;base64,[A-Za-z0-9+/]+={0,2}$/.test(profileImage)) return fail(res,400,"Invalid profile image");
     const image=Buffer.from(profileImage.split(",")[1],"base64");
     if(image[0]!==255||image[1]!==216||image[2]!==255||image.at(-2)!==255||image.at(-1)!==217) return fail(res,400,"Invalid JPEG");
   }
+  if(!Object.keys(fields).length)return fail(res,400,"أدخل البيانات المراد تعديلها");
   try{
     const user=await User.findOneAndUpdate({_id:req.user._id,role:"delivery",disabled:{$ne:true}},
-      {$set:{profileImage}},
+      {$set:fields},
       {new:true,runValidators:true});
     if(!user)return fail(res,404,"Courier not found");
     return res.json({profile:await account(user)});
