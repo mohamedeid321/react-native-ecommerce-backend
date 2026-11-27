@@ -200,11 +200,13 @@ export async function listGuestOrdersByPhone(req,res){
  const phone=checkoutPhone(req.body?.phone);
  if(!/^01[0125]\d{8}$/.test(phone))return fail(res,400,'اكتب رقم الموبايل المسجّل في الطلب');
  const now=new Date();
- const [current,legacy]=await Promise.all([
-  GuestContact.exists({phone1:phone,expiresAt:{$gt:now}}),
-  Order.exists({source:'guest',guestContactExpiresAt:{$exists:false},'delivery.phone1':{$in:[phone,'+2'+phone,'002'+phone]},createdAt:{$gte:guestContactCutoff(now.getTime())}}),
- ]);
- return res.json({hasOrders:Boolean(current||legacy)});
+ const contacts=await GuestContact.find({phone1:phone,expiresAt:{$gt:now}}).sort({expiresAt:-1}).limit(25).select('_id').lean();
+ const orders=await Order.find({source:'guest',$or:[
+  {_id:{$in:contacts.map(contact=>contact._id)},guestContactExpiresAt:{$gt:now}},
+  {guestContactExpiresAt:{$exists:false},'delivery.phone1':{$in:[phone,'+2'+phone,'002'+phone]},createdAt:{$gte:guestContactCutoff(now.getTime())}},
+ ]}).sort({createdAt:-1}).limit(25).select('status -_id').lean();
+ const statuses=[...new Set(orders.map(order=>order.status).filter(status=>ORDER_STATUSES.includes(status)))];
+ return res.json({hasOrders:statuses.length>0,statuses});
 }
 
 export async function cancelGuestOrder(req,res){
