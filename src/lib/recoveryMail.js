@@ -30,22 +30,41 @@ export function recoveryMailer(env=process.env){
  return null;
 }
 
-export function recoveryMessage(code){
- if(!/^\d{8}$/.test(code))throw new Error('Invalid recovery code');
+const escapeAttribute=value=>value.replace(/[&"<>']/g,char=>({'&':'&amp;','"':'&quot;','<':'&lt;','>':'&gt;',"'":'&#39;'}[char]));
+
+export function recoveryMessage(code,origin){
+ if(typeof code!=='string'||!/^\d{8}$/.test(code))throw new Error('Invalid recovery code');
+ const site=new URL(origin);
+ if(site.protocol!=='https:'||site.origin!==origin)throw new Error('Invalid storefront origin');
+ const base=escapeAttribute(origin);
+ const image=(name,size,alt='')=>`<img alt="${alt}" width="${size}" src="${base}/assets/email/${name}.png" style="display:inline-block;border:0;vertical-align:middle;max-width:100%;height:auto">`;
+ const boxes=[...code].map(digit=>`<td width="29" height="40" align="center" bgcolor="#eef6ea" style="border:1px solid #cbdccc;border-radius:6px;color:#114931;font:bold 21px Arial,sans-serif">${digit}</td>`).join('');
+ const facebook='https://www.facebook.com/profile.php?id=61596476945722';
+ const footerLinks=[['about','عن لقطة'],['faq','المساعدة'],['privacy','سياسة الخصوصية']]
+  .map(([path,label])=>`<a href="${base}/${path}" style="display:inline-block;margin:4px;color:#164d31;font-weight:bold">${label}</a>`).join(' &nbsp; ');
  return {
   subject:'كود استرجاع كلمة المرور | لقطة',
-  text:'كود استرجاع كلمة المرور لحسابك في لقطة:\n'+code+'\n\nاكتب الكود في صفحة استرجاع كلمة المرور. صالح لمدة ١٥ دقيقة ويُستخدم مرة واحدة. لو ما طلبتش الاسترجاع، تجاهل الرسالة.',
-  html:`<!doctype html><html lang="ar" dir="rtl"><body style="margin:0;background:#f4f7f0;color:#173d2b;font-family:Tahoma,Arial,sans-serif">
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr><td align="center" style="padding:24px 12px">
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:520px;background:#fff;border:1px solid #dce8db">
-  <tr><td align="center" bgcolor="#06462c" style="padding:18px;color:#fff;font-size:28px;font-weight:bold">لقطة</td></tr>
-  <tr><td align="center" style="padding:28px 18px;line-height:1.8">
-  <h1 style="margin:0;font-size:22px">كود استرجاع كلمة المرور</h1>
-  <p>اكتب الكود في صفحة استرجاع كلمة المرور على لقطة.</p>
-  <p dir="ltr" style="padding:12px 16px;background:#e9f3e7;color:#06462c;font:bold 30px/1.3 monospace;letter-spacing:5px">${code}</p>
-  <p>صالح لمدة ١٥ دقيقة ويُستخدم مرة واحدة.</p>
-  <p style="color:#496456;font-size:13px">لو ما طلبتش الاسترجاع، تجاهل الرسالة.</p>
-  </td></tr><tr><td align="center" bgcolor="#06462c" style="padding:12px;color:#fff">فريق لقطة</td></tr>
+  text:'كود استرجاع كلمة المرور لحسابك في لقطة:\n'+code+'\n\nانسخ الكود وأدخله في صفحة استرجاع كلمة المرور اللي فتحتها على لقطة. صالح لمدة ١٥ دقيقة ويُستخدم مرة واحدة. لو ما طلبتش الاسترجاع، تجاهل الرسالة.',
+  html:`<!doctype html><html lang="ar" dir="rtl"><body style="margin:0;background:#f0f5ef;color:#19412f;font-family:Tahoma,Arial,sans-serif">
+  <table role="presentation" dir="rtl" width="100%" cellspacing="0" cellpadding="0" bgcolor="#f0f5ef"><tr><td align="center" style="padding:24px 10px">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:548px;background:#fff;border-top:5px solid #137045;border-radius:14px">
+  <tr><td align="center" style="padding:27px 10px 22px;line-height:1.8">
+   ${image('envelope',72)}
+   <h1 style="margin:12px 0 6px;font-size:25px;line-height:1.4;color:#123e2a">كود استرجاع كلمة المرور</h1>
+   <p style="margin:0 auto 14px;max-width:375px;color:#426051;font-size:14px">انسخ الكود وأدخله في صفحة استرجاع كلمة المرور اللي فتحتها على لقطة.</p>
+   <table role="presentation" dir="ltr" cellpadding="0" cellspacing="3" align="center"><tr>${boxes}</tr></table>
+   <p style="margin:12px 0 10px;font-size:13px;color:#426051">تقدر تحدد الكود وتنسخه من هنا <strong dir="ltr" style="white-space:nowrap">${code}</strong></p>
+   <p style="margin:12px 0 4px;font-size:14px">صالح لمدة <strong>١٥ دقيقة</strong> ويُستخدم مرة واحدة.</p>
+   <p style="margin:0;font-size:13px;color:#426051">لو ما طلبتش الاسترجاع، تجاهل الرسالة.</p>
+  </td></tr>
+  <tr><td align="center" bgcolor="#e9f2e7" style="padding:20px 12px;color:#19412f;font-size:13px;line-height:1.7">
+   <a href="${facebook}" style="display:inline-block;margin:0 5px">${image('facebook',26,'لقطة على فيسبوك')}</a>
+   <span style="display:inline-block;margin:0 5px">${image('whatsapp',26,'واتساب')}</span>
+   <span style="display:inline-block;margin:0 5px">${image('instagram',26,'إنستجرام')}</span>
+   <p style="margin:8px 0">${footerLinks}</p>
+   <p style="margin:6px 0 14px">لقطة، فاكهة طازجة لحد باب بيتك في مدينة 15 مايو.</p>
+   ${image('lotta',88,'شعار لقطة')}
+  </td></tr>
   </table></td></tr></table></body></html>`,
  };
 }

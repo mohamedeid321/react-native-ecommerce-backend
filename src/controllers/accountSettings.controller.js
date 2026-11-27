@@ -54,7 +54,7 @@ export async function forgotPassword(req,res){
  if(!origin)return res.sendStatus(403);
  const user=await User.findOneAndUpdate({email:address,role:'customer',disabled:{$ne:true}},{$set:{resetDigest,resetExpires:new Date(Date.now()+15*60000)}});
  if(user){
-  const sent=await mail({to:user.email,...recoveryMessage(code)});
+  const sent=await mail({to:user.email,...recoveryMessage(code,origin)});
   if(!sent){await User.updateOne({_id:user._id,resetDigest},{$unset:{resetDigest:1,resetExpires:1}});console.error('Password reset delivery failed');}
  }
  res.json({message:'لو البريد مسجّل، هيوصلك كود استرجاع صالح لمدة ١٥ دقيقة.'});
