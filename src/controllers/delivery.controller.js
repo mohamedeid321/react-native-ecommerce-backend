@@ -1,3 +1,4 @@
+import {attachGuestContacts} from '../utils/guestContact.js';
 import mongoose from 'mongoose';
 import {getRedis} from "../lib/redis.js";
 import {createSessionStore} from "../lib/sessionStore.js";
@@ -33,7 +34,7 @@ export const listCourierOrders=async(req,res)=>{
  if(req.query.history==='true'){delete filter.deliveryDate;filter.status='delivered';}
  const page=Math.min(10000,Math.max(1,parseInt(req.query.page)||1));
  const orders=await Order.find(filter).sort(req.query.history==='true'?{approvedAt:-1,_id:-1}:{deliveryDate:1,routeSequence:1,createdAt:1}).skip((page-1)*50).limit(50);
- res.json({success:true,orders,page});
+ res.json({success:true,orders:await attachGuestContacts(orders),page});
  }catch(e){serverError(res,e,"listCourierOrders");}
 };
 export const reportDelivered=async(req,res)=>{

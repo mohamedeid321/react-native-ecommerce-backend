@@ -1,3 +1,5 @@
+import GuestContact from '../models/guestContact.model.js';
+import {attachGuestContacts,guestContactExpiry,guestContactCutoff,guestPhoneFingerprint} from '../utils/guestContact.js';
 import {guestTrackingToken,matchesGuestToken,trackingCutoff} from '../utils/guestTracking.js';
 import {createHash} from 'node:crypto';
 import {checkoutAddress,checkoutPhone} from '../utils/checkoutAddress.js';
@@ -108,6 +110,8 @@ function checkout({guest=false,quote=false}={}){
     const accountPhone=checkoutPhone(user?.phone);
     const phones=[...new Set([phone,accountPhone].filter(Boolean).flatMap(n=>[n,'+2'+n,'002'+n]))];
     const history=[{'delivery.phone1':{$in:phones}},{accountPhone:{$in:phones}}];
+    if(process.env.JWT_ACCESS_SECRET&&phones.length)history.push({guestPhoneHash:{$in:[...new Set([phone,accountPhone].filter(Boolean))].map(guestPhoneFingerprint)}});
+    if(guest&&!quote&&!process.env.JWT_ACCESS_SECRET)reject(503,'إتمام طلبات الضيوف غير متاح مؤقتًا');
     if(user)history.push({user:user._id});
     if(settings.firstOrderFree){
      const linked=await User.findOne({phone:{$in:phones},role:'customer'}).select('_id').session(session);
@@ -137,8 +141,16 @@ function checkout({guest=false,quote=false}={}){
     }
     const address=Object.fromEntries(['city','governorate','neighborhood','building','apartment','floor','street','landmark','phone1','phone2'].map(k=>[k,delivery[k]]));
     address.whatsapp=delivery.whatsapp||address.phone1;
+    const guestContactExpiresAt=guest?guestContactExpiry():undefined;
+    let contact;
+    if(guest){
+     const {phone1,phone2,whatsapp}=address;
+     contact={phone1:phone,phone2,whatsapp,expiresAt:guestContactExpiresAt};
+     delete address.phone1;delete address.phone2;delete address.whatsapp;
+    }
     const customer=guest?{username:name}:{username:user.displayName||user.username,email:user.email};
-    [order]=await Order.create([{orderNumber:100000+counter.seq,...identity,accountPhone:accountPhone||undefined,items,...totals,delivery:address,customer,status:'placed',statusHistory:[{status:'placed'}],checkoutKey:key,deliveryDate,deliverySlot,paymentMethod:'cod',paymentStatus:'pending'}],{session});
+    [order]=await Order.create([{orderNumber:100000+counter.seq,...identity,guestContactExpiresAt,guestPhoneHash:guest?guestPhoneFingerprint(phone):undefined,accountPhone:accountPhone||undefined,items,...totals,delivery:address,customer,status:'placed',statusHistory:[{status:'placed'}],checkoutKey:key,deliveryDate,deliverySlot,paymentMethod:'cod',paymentStatus:'pending'}],{session});
+    if(guest)await GuestContact.create([{_id:order._id,...contact}],{session});
     if(cart){cart.items=[];await cart.save({session})}
    });
    release();release=undefined;
@@ -165,7 +177,7 @@ async function findGuestTrackingOrder(body,includeItems=false){
  const {orderNumber,token}=body??{};
  if(typeof orderNumber!=='string'||!/^\d{1,12}$/.test(orderNumber)||
     typeof token!=='string'||! /^[a-f0-9]{64}$/.test(token))return null;
- const fields='orderNumber source status statusHistory createdAt deliveryDate deliverySlot courierDeliveredAt +checkoutKey';
+ const fields='orderNumber source status statusHistory createdAt deliveryDate deliverySlot courierDeliveredAt guestContactExpiresAt +checkoutKey';
  const order=await Order.findOne({orderNumber:Number(orderNumber),source:'guest',createdAt:{$gte:trackingCutoff()}})
   .select(includeItems?fields+' items':fields).lean();
  return order&&matchesGuestToken(guestTrackingToken(order),token)?order:null;
@@ -187,19 +199,12 @@ export async function listGuestOrdersByPhone(req,res){
  res.set('Cache-Control','no-store');
  const phone=checkoutPhone(req.body?.phone);
  if(!/^01[0125]\d{8}$/.test(phone))return fail(res,400,'اكتب رقم الموبايل المسجّل في الطلب');
- const grants=req.body?.grants;
- if(!Array.isArray(grants)||grants.length>30)return fail(res,400,'بيانات التتبّع غير صحيحة');
- const keys=new Map();
- for(const grant of grants){
-  if(!Number.isSafeInteger(grant?.orderNumber)||grant.orderNumber<=0||typeof grant.token!=='string'||!/^[a-f0-9]{64}$/.test(grant.token))
-   return fail(res,400,'بيانات التتبّع غير صحيحة');
-  keys.set(grant.orderNumber,grant.token);
- }
- if(!keys.size)return res.json({orders:[]});
- const orders=await Order.find({source:'guest',orderNumber:{$in:[...keys.keys()]},'delivery.phone1':{$in:[phone,'+2'+phone,'002'+phone]},createdAt:{$gte:trackingCutoff()}})
-  .select('orderNumber source status statusHistory createdAt deliveryDate deliverySlot courierDeliveredAt +checkoutKey')
-  .sort({createdAt:-1}).lean();
- return res.json({orders:orders.filter(o=>matchesGuestToken(guestTrackingToken(o),keys.get(o.orderNumber))).map(publicGuestTracking)});
+ const now=new Date();
+ const [current,legacy]=await Promise.all([
+  GuestContact.exists({phone1:phone,expiresAt:{$gt:now}}),
+  Order.exists({source:'guest',guestContactExpiresAt:{$exists:false},'delivery.phone1':{$in:[phone,'+2'+phone,'002'+phone]},createdAt:{$gte:guestContactCutoff(now.getTime())}}),
+ ]);
+ return res.json({hasOrders:Boolean(current||legacy)});
 }
 
 export async function cancelGuestOrder(req,res){
@@ -240,7 +245,8 @@ export const getOrderById = async (req, res) => {
     const order = isValidId(id) ? await Order.findById(id) : null;
     const allowed = order && (req.user.role === "admin" || String(order.user) === String(req.user._id));
     if (!allowed) return fail(res, 404, "الطلب غير موجود");
-    res.json({ success: true, order });
+    const [visibleOrder]=req.user.role==="admin"?await attachGuestContacts([order]):[order];
+    res.json({ success: true, order:visibleOrder });
   } catch (error) {
     serverError(res, error, "getOrderById");
   }

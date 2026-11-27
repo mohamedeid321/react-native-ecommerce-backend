@@ -1,3 +1,4 @@
+import GuestContact from '../models/guestContact.model.js';
 import mongoose from 'mongoose';
 import Order from '../models/order.model.js';
 import OrderCost from '../models/orderCost.model.js';
@@ -33,6 +34,7 @@ export async function resetStoreData(req,res){
      if(reserved.length)await Product.bulkWrite(reserved.map(row=>({updateOne:{filter:{_id:row._id},update:{$inc:{stock:row.quantity}}}})),{session});
     }
     result.orders=(await Order.deleteMany({},{session})).deletedCount;
+    await GuestContact.deleteMany({},{session});
     await OrderCost.deleteMany({},{session});
     await Notification.deleteMany({'data.type':{$in:['order','guest-tracking']}},{session});
    }

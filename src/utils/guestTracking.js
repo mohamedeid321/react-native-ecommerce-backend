@@ -5,6 +5,7 @@ export const trackingCutoff=()=>new Date(Date.now()-maxAge);
 
 export function guestTrackingToken(order,key=order.checkoutKey){
  const secret=process.env.JWT_ACCESS_SECRET;
+ if(order.guestContactExpiresAt&&new Date(order.guestContactExpiresAt)<=new Date())return '';
  if(order.source!=='guest'||!key||!secret||!order.createdAt||new Date(order.createdAt)<trackingCutoff())return '';
  return createHmac('sha256',secret).update('lotta:guest-tracking:v1:'+order.orderNumber+':'+key).digest('hex');
 }

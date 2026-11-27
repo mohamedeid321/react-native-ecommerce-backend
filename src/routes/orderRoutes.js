@@ -1,4 +1,3 @@
-import {requestGuestTracking} from '../controllers/guestTrackingRecovery.controller.js';
 import {getCourierProfile,updateCourierProfile} from "../controllers/courierProfile.controller.js";
 import {authRateLimit} from "../middleware/authRateLimit.js";
 import {updateCourier,setCourierDisabled,removeCourier,createCourier,listCouriers,assignCourier,listCourierOrders,reportDelivered,approveDelivery} from "../controllers/delivery.controller.js";
@@ -16,10 +15,9 @@ import {
 const router = express.Router();
 router.post("/guest/quote",authRateLimit("guest-quote",30),quoteGuestOrder);
 router.post("/guest",authRateLimit("guest-order",12),createGuestOrder);
-router.post("/guest/lookup",authRateLimit("guest-phone-tracking",90),listGuestOrdersByPhone);
+router.post("/guest/lookup",authRateLimit("guest-phone-tracking",20),listGuestOrdersByPhone);
 router.post("/guest/track",authRateLimit("guest-tracking",120),getGuestTracking);
 router.post("/guest/cancel",authRateLimit("guest-cancel",20),cancelGuestOrder);
-router.post("/guest/recover",authRateLimit("guest-recover",5),requestGuestTracking);
 router.use(protectRoute);
 const courierOnly=(req,res,next)=>req.user.role==="delivery"?next():res.status(403).json({message:"Courier only"});
 router.get("/couriers",adminRoute,listCouriers);
