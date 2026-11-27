@@ -34,7 +34,7 @@ const restock = (items) =>
 
 // ---------------- العميل ----------------
 
-const receipt=(order,key)=>({orderNumber:order.orderNumber,total:order.total,deliveryDate:order.deliveryDate,source:order.source,trackingToken:guestTrackingToken(order,key)});
+const receipt=(order,key)=>({orderNumber:order.orderNumber,total:order.total,deliveryDate:order.deliveryDate,deliverySlot:order.deliverySlot,source:order.source,trackingToken:guestTrackingToken(order,key)});
 
 function guestLines(lines){
  if(!Array.isArray(lines)||!lines.length||lines.length>50)throw Error('راجع المنتجات الموجودة في السلة');
@@ -65,6 +65,8 @@ function checkout({guest=false,quote=false}={}){
     const existing=await Order.findOne(prior);
     if(existing)return reply(existing,200);
    }
+   const deliverySlot=req.body?.deliverySlot;
+   if(deliverySlot!==undefined&&!([16,17,18,19,20,21].includes(deliverySlot)))return fail(res,400,'اختار فترة توصيل صحيحة');
    let lines,info,name;
    if(guest){
     if(!req.body?.delivery&&!quote)return fail(res,404,'لم يتم تسجيل الطلب السابق');
@@ -123,10 +125,10 @@ function checkout({guest=false,quote=false}={}){
      return {product:p._id,name:p.name,image:p.image,unit:p.unit,unitPrice,quantity,lineTotal:round2(unitPrice*quantity),stock:p.stock};
     });
     const totals=computeTotals(items,{...settings,firstOrder});
-    const deliveryDate=scheduledDeliveryDate(new Date(),settings.cutoffHour);
+    const deliveryDate=scheduledDeliveryDate(new Date(),deliverySlot===undefined?settings.cutoffHour:24);
     const pricedItems=items.map(({product,quantity,unitPrice})=>[String(product),quantity,unitPrice]);
-    const quoteKey=createHash('sha256').update(JSON.stringify([pricedItems,totals,deliveryDate])).digest('hex');
-    if(quote){preview={items,...totals,deliveryDate,quoteKey};return}
+    const quoteKey=createHash('sha256').update(JSON.stringify(deliverySlot===undefined?[pricedItems,totals,deliveryDate]:[pricedItems,totals,deliveryDate,deliverySlot])).digest('hex');
+    if(quote){preview={items,...totals,deliveryDate,deliverySlot,quoteKey};return}
     if((guest||req.body?.quoteKey!==undefined)&&req.body?.quoteKey!==quoteKey)
      reject(409,'الإجمالي أو موعد التوصيل اتغيّر. راجع الطلب قبل التأكيد.');
     for(const {product,quantity} of items){
@@ -136,7 +138,7 @@ function checkout({guest=false,quote=false}={}){
     const address=Object.fromEntries(['city','governorate','neighborhood','building','apartment','floor','street','landmark','phone1','phone2'].map(k=>[k,delivery[k]]));
     address.whatsapp=delivery.whatsapp||address.phone1;
     const customer=guest?{username:name}:{username:user.displayName||user.username,email:user.email};
-    [order]=await Order.create([{orderNumber:100000+counter.seq,...identity,accountPhone:accountPhone||undefined,items,...totals,delivery:address,customer,status:'placed',statusHistory:[{status:'placed'}],checkoutKey:key,deliveryDate,paymentMethod:'cod',paymentStatus:'pending'}],{session});
+    [order]=await Order.create([{orderNumber:100000+counter.seq,...identity,accountPhone:accountPhone||undefined,items,...totals,delivery:address,customer,status:'placed',statusHistory:[{status:'placed'}],checkoutKey:key,deliveryDate,deliverySlot,paymentMethod:'cod',paymentStatus:'pending'}],{session});
     if(cart){cart.items=[];await cart.save({session})}
    });
    release();release=undefined;
@@ -159,18 +161,33 @@ export const quoteOrder=checkout({quote:true});
 export const createGuestOrder=checkout({guest:true});
 export const quoteGuestOrder=checkout({guest:true,quote:true});
 
+async function findGuestTrackingOrder(body,includeItems=false){
+ const {orderNumber,token}=body??{};
+ if(typeof orderNumber!=='string'||!/^\d{1,12}$/.test(orderNumber)||
+    typeof token!=='string'||! /^[a-f0-9]{64}$/.test(token))return null;
+ const fields='orderNumber source status statusHistory createdAt deliveryDate deliverySlot courierDeliveredAt +checkoutKey';
+ const order=await Order.findOne({orderNumber:Number(orderNumber),source:'guest',createdAt:{$gte:trackingCutoff()}})
+  .select(includeItems?fields+' items':fields).lean();
+ return order&&matchesGuestToken(guestTrackingToken(order),token)?order:null;
+}
+
 export async function getGuestTracking(req,res){
  res.set('Cache-Control','no-store');
- const {orderNumber,token}=req.body??{};
- if(typeof orderNumber!=='string'||!/^\d{1,12}$/.test(orderNumber)||
-    typeof token!=='string'||! /^[a-f0-9]{64}$/.test(token))
-  return fail(res,404,'رابط التتبع غير صالح أو انتهت صلاحيته');
- const order=await Order.findOne({orderNumber:Number(orderNumber),source:'guest',createdAt:{$gte:trackingCutoff()}})
-  .select('orderNumber source status statusHistory createdAt deliveryDate courierDeliveredAt +checkoutKey').lean();
- if(!order||!matchesGuestToken(guestTrackingToken(order),token))
-  return fail(res,404,'رابط التتبع غير صالح أو انتهت صلاحيته');
- const {status,statusHistory,createdAt,deliveryDate,courierDeliveredAt}=order;
- return res.json({order:{orderNumber:order.orderNumber,status,statusHistory,createdAt,deliveryDate,courierDeliveredAt}});
+ const order=await findGuestTrackingOrder(req.body);
+ if(!order)return fail(res,404,'رابط التتبع غير صالح أو انتهت صلاحيته');
+ const {orderNumber,status,statusHistory,createdAt,deliveryDate,deliverySlot,courierDeliveredAt}=order;
+ return res.json({order:{orderNumber,status,statusHistory,createdAt,deliveryDate,deliverySlot,courierDeliveredAt}});
+}
+
+export async function cancelGuestOrder(req,res){
+ res.set('Cache-Control','no-store');
+ const order=await findGuestTrackingOrder(req.body,true);
+ if(!order)return fail(res,404,'رابط التتبع غير صالح أو انتهت صلاحيته');
+ if(order.status==='cancelled')return res.json({success:true,message:'تم إلغاء الطلب'});
+ if(!CUSTOMER_CANCELLABLE.includes(order.status))return fail(res,400,'لا يمكن إلغاء الطلب بعد خروجه للتوصيل');
+ if(!await transition(order,'cancelled','customer'))return fail(res,409,'حالة الطلب اتغيرت، حدّث الصفحة');
+ await notifyAdmins({title:'تم إلغاء طلب',body:`العميل ألغى الطلب #${order.orderNumber}`,orderId:order._id});
+ return res.json({success:true,message:'تم إلغاء الطلب'});
 }
 
 const pageParams = (query, defaultLimit = 20) => {

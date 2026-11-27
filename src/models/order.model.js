@@ -29,6 +29,7 @@ const orderSchema = new mongoose.Schema(
     approvedAt: Date,
     approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     checkoutKey: { type: String, maxlength: 128, select: false },
+    deliverySlot: {type:Number,enum:[16,17,18,19,20,21]},
     deliveryDate: { type: String, match: /^\d{4}-\d{2}-\d{2}$/, index: true },
     paymentMethod: { type: String, enum: ["cod"], default: "cod" },
     paymentStatus: { type: String, enum: ["pending", "paid"], default: "pending" },
