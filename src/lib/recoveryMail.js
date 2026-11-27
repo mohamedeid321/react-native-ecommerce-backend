@@ -30,27 +30,22 @@ export function recoveryMailer(env=process.env){
  return null;
 }
 
-const escapeHtml=value=>value.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-
-export function recoveryMessage(origin,token){
- const link=origin+'/login#reset='+token;
- const safeLink=escapeHtml(link);
+export function recoveryMessage(code){
+ if(!/^\d{8}$/.test(code))throw new Error('Invalid recovery code');
  return {
-  subject:'إعادة تعيين كلمة المرور لحسابك في لقطة',
-  text:'أهلًا من لقطة.\n\nافتح الرابط التالي لاختيار كلمة مرور جديدة. الرابط صالح لمدة ١٥ دقيقة ويُستخدم مرة واحدة.\n'+link+'\n\nلو ما طلبتش التغيير، تجاهل الرسالة.\nفريق لقطة',
-  html:`<!doctype html><html lang="ar" dir="rtl"><body style="margin:0;background:#f3f6ee;font-family:Tahoma,Arial,sans-serif;color:#183b2b">
-  <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:#f3f6ee"><tr><td align="center" style="padding:24px 12px">
-  <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="max-width:560px;background:#fff">
-  <tr><td align="center" bgcolor="#06462c" style="color:white;padding:20px;font-size:28px;font-weight:bold">لقطة</td></tr>
-  <tr><td align="right" style="padding:26px 24px;font-size:15px;line-height:1.85">
-  <h1 style="font-size:23px;line-height:1.4;margin:0 0 12px">إعادة تعيين كلمة المرور</h1>
-  <p style="margin:0 0 18px">أهلًا من لقطة. استخدم الزر لاختيار كلمة مرور جديدة لحسابك. الرابط صالح لمدة ١٥ دقيقة ويُستخدم مرة واحدة.</p>
-  <a href="${safeLink}" style="display:inline-block;padding:11px 20px;background:#0b6139;color:white;text-decoration:none;border-radius:8px;font-weight:bold">اختار كلمة مرور جديدة</a>
-  <p style="margin:18px 0 0;color:#486354">لو ما طلبتش تغيير كلمة المرور، تجاهل الرسالة.</p>
-  </td></tr>
-  <tr><td align="center" style="background:#e8f2e6;padding:16px">
-  </td></tr>
-  <tr><td align="center" bgcolor="#06462c" style="padding:12px;color:white">فريق لقطة</td></tr>
+  subject:'كود استرجاع كلمة المرور | لقطة',
+  text:'كود استرجاع كلمة المرور لحسابك في لقطة:\n'+code+'\n\nاكتب الكود في صفحة استرجاع كلمة المرور. صالح لمدة ١٥ دقيقة ويُستخدم مرة واحدة. لو ما طلبتش الاسترجاع، تجاهل الرسالة.',
+  html:`<!doctype html><html lang="ar" dir="rtl"><body style="margin:0;background:#f4f7f0;color:#173d2b;font-family:Tahoma,Arial,sans-serif">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr><td align="center" style="padding:24px 12px">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:520px;background:#fff;border:1px solid #dce8db">
+  <tr><td align="center" bgcolor="#06462c" style="padding:18px;color:#fff;font-size:28px;font-weight:bold">لقطة</td></tr>
+  <tr><td align="center" style="padding:28px 18px;line-height:1.8">
+  <h1 style="margin:0;font-size:22px">كود استرجاع كلمة المرور</h1>
+  <p>اكتب الكود في صفحة استرجاع كلمة المرور على لقطة.</p>
+  <p dir="ltr" style="padding:12px 16px;background:#e9f3e7;color:#06462c;font:bold 30px/1.3 monospace;letter-spacing:5px">${code}</p>
+  <p>صالح لمدة ١٥ دقيقة ويُستخدم مرة واحدة.</p>
+  <p style="color:#496456;font-size:13px">لو ما طلبتش الاسترجاع، تجاهل الرسالة.</p>
+  </td></tr><tr><td align="center" bgcolor="#06462c" style="padding:12px;color:#fff">فريق لقطة</td></tr>
   </table></td></tr></table></body></html>`,
  };
 }
