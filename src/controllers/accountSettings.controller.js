@@ -1,3 +1,4 @@
+import {recoveryMailer} from '../lib/recoveryMail.js';
 import {randomBytes,createHash} from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import User from '../models/user.model.js';
@@ -39,7 +40,8 @@ export async function updateAccount(req,res){
 }
 
 export async function forgotPassword(req,res){
- if(!process.env.RESEND_API_KEY||!process.env.RESET_FROM_EMAIL)return res.status(503).json({message:'إرسال بريد الاسترجاع غير متاح حاليًا'});
+ const mail=recoveryMailer();
+ if(!mail)return res.status(503).json({message:'إرسال بريد الاسترجاع غير متاح حاليًا'});
  const {email}=req.body??{};
  if(!emailOk(email))return res.status(400).json({message:'اكتب بريدًا صحيحًا'});
  const token=randomBytes(32).toString('hex'),resetDigest=hash(token);
@@ -47,8 +49,8 @@ export async function forgotPassword(req,res){
  if(!origin)return res.sendStatus(403);
  const user=await User.findOneAndUpdate({email:email.trim().toLowerCase(),role:'customer',disabled:{$ne:true}},{$set:{resetDigest,resetExpires:new Date(Date.now()+15*60000)}});
  if(user){
-  const response=await fetch('https://api.resend.com/emails',{method:'POST',headers:{Authorization:'Bearer '+process.env.RESEND_API_KEY,'Content-Type':'application/json'},body:JSON.stringify({from:process.env.RESET_FROM_EMAIL,to:[user.email],subject:'استرجاع كلمة مرور لقطة',text:'لتغيير كلمة المرور خلال ١٥ دقيقة افتح الرابط التالي:\n'+origin+'/login#reset='+token}),signal:AbortSignal.timeout(8000)}).catch(()=>null);
-  if(!response?.ok){await User.updateOne({_id:user._id,resetDigest},{$unset:{resetDigest:1,resetExpires:1}});console.error('Password reset delivery failed');}
+  const sent=await mail({to:user.email,subject:'استرجاع كلمة مرور لقطة',text:'لتغيير كلمة المرور خلال ١٥ دقيقة افتح الرابط التالي:\n'+origin+'/login#reset='+token});
+  if(!sent){await User.updateOne({_id:user._id,resetDigest},{$unset:{resetDigest:1,resetExpires:1}});console.error('Password reset delivery failed');}
  }
  res.json({message:'لو البريد مسجّل، هيوصلك رابط استرجاع صالح لمدة ١٥ دقيقة.'});
 }
