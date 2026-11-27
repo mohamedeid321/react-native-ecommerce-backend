@@ -66,7 +66,7 @@ function checkout({guest=false,quote=false}={}){
     if(existing)return reply(existing,200);
    }
    const deliverySlot=req.body?.deliverySlot;
-   if(deliverySlot!==undefined&&!([16,17,18,19,20,21].includes(deliverySlot)))return fail(res,400,'اختار فترة توصيل صحيحة');
+   if(deliverySlot!==undefined&&!([16,17,18,19].includes(deliverySlot)))return fail(res,400,'اختار فترة توصيل صحيحة');
    let lines,info,name;
    if(guest){
     if(!req.body?.delivery&&!quote)return fail(res,404,'لم يتم تسجيل الطلب السابق');
