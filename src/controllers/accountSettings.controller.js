@@ -1,4 +1,4 @@
-import {recoveryMailer} from '../lib/recoveryMail.js';
+import {recoveryMailer,recoveryMessage} from '../lib/recoveryMail.js';
 import {randomBytes,createHash} from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import User from '../models/user.model.js';
@@ -49,7 +49,7 @@ export async function forgotPassword(req,res){
  if(!origin)return res.sendStatus(403);
  const user=await User.findOneAndUpdate({email:email.trim().toLowerCase(),role:'customer',disabled:{$ne:true}},{$set:{resetDigest,resetExpires:new Date(Date.now()+15*60000)}});
  if(user){
-  const sent=await mail({to:user.email,subject:'استرجاع كلمة مرور لقطة',text:'لتغيير كلمة المرور خلال ١٥ دقيقة افتح الرابط التالي:\n'+origin+'/login#reset='+token});
+  const sent=await mail({to:user.email,...recoveryMessage(origin,token)});
   if(!sent){await User.updateOne({_id:user._id,resetDigest},{$unset:{resetDigest:1,resetExpires:1}});console.error('Password reset delivery failed');}
  }
  res.json({message:'لو البريد مسجّل، هيوصلك رابط استرجاع صالح لمدة ١٥ دقيقة.'});
