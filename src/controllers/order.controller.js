@@ -57,7 +57,7 @@ function checkout({guest=false,quote=false}={}){
   const user=req.user;
   const identity=guest?{source:'guest',user:null}:{user:user._id};
   const prior={...identity,checkoutKey:key};
-  const reply=(order,status)=>res.status(status).json({success:true,message:'تم استلام طلبك. سيتواصل معك فريق خدمة العملاء لتأكيد الطلب قبل بدء التجهيز.',order:guest?receipt(order,key):order});
+  const reply=(order,status)=>res.status(status).json({success:true,message:'تم استلام طلبك. سيتواصل معك فريق خدمة العملاء اليوم لتأكيد الطلب قبل بدء التجهيز.',order:guest?receipt(order,key):order});
   const reject=(status,message)=>{throw Object.assign(new Error(message),{checkoutStatus:status})};
   let session,release,order,preview,replayed;
   try{
