@@ -10,6 +10,7 @@ import {
   cancelOrder,
   getAllOrders,
   updateOrderStatus,
+  archiveOrder,
 } from "../controllers/order.controller.js";
 
 const router = express.Router();
@@ -42,6 +43,7 @@ router.patch("/:id/cancel", cancelOrder);
 // الـ admin
 router.get("/", adminRoute, getAllOrders); // ?scope=current|finished&page&limit
 router.patch("/:id/status", adminRoute, updateOrderStatus); // { status }
+router.delete("/:id", adminRoute, archiveOrder);
 
 // طلب واحد (صاحبه أو الـ admin)
 router.get("/:id", getOrderById);

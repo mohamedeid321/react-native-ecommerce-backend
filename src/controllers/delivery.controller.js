@@ -1,3 +1,4 @@
+import {CURRENT_STATUSES} from "../config/shop.js";
 import {hasAdminPermission} from '../config/adminPermissions.js';
 import {attachGuestContacts} from '../utils/guestContact.js';
 import mongoose from 'mongoose';
@@ -19,7 +20,7 @@ export const assignCourier=async(req,res)=>{
  const order=await mongoose.connection.transaction(async session=>{
   const courier=await User.findOneAndUpdate({_id:courierId,role:"delivery",archivedAt:null,disabled:{$ne:true}},{$inc:{__v:1}},{session});
   if(!courier)return null;
-  return Order.findOneAndUpdate({_id:id,status:{$in:["placed","preparing","out_for_delivery"]},courierDeliveredAt:null},{$set:{courier:courierId,assignedAt:new Date(),...(routeSequence===undefined?{}:{routeSequence})}},{new:true,session});
+  return Order.findOneAndUpdate({_id:id,archivedAt:null,status:{$in:CURRENT_STATUSES},courierDeliveredAt:null},{$set:{courier:courierId,assignedAt:new Date(),...(routeSequence===undefined?{}:{routeSequence})}},{new:true,session});
  });
  if(!order)return fail(res,409,"Order cannot be assigned");
  res.json({success:true,order});
@@ -27,12 +28,16 @@ export const assignCourier=async(req,res)=>{
 };
 export const listCourierOrders=async(req,res)=>{
  try{
- const date=req.query.date??today();
+ const localToday=today(),date=req.query.date??localToday;
  if(typeof date!=="string"||!/^\d{4}-\d{2}-\d{2}$/.test(date))return fail(res,400,"Invalid date");
  const filter={courier:req.user._id,deliveryDate:date};
  if(req.query.overdue==="true"){filter.deliveryDate={$lt:today()};filter.status={$in:["placed","preparing","out_for_delivery"]};}
  if(req.query.status!==undefined){if(!["placed","preparing","out_for_delivery","delivered","cancelled"].includes(req.query.status))return fail(res,400,"Invalid status");if(req.query.overdue==="true"&&["delivered","cancelled"].includes(req.query.status))return fail(res,400,"Invalid overdue status");filter.status=req.query.status;}
  if(req.query.history==='true'){delete filter.deliveryDate;filter.status='delivered';}
+ else if(req.query.scope==='assigned'&&req.query.date===undefined&&req.query.status===undefined&&req.query.overdue!=='true'){
+  delete filter.deliveryDate;
+  filter.$or=[{status:{$in:CURRENT_STATUSES}},{status:'delivered',deliveryDate:localToday}];
+ }
  const page=Math.min(10000,Math.max(1,parseInt(req.query.page)||1));
  const orders=await Order.find(filter).sort(req.query.history==='true'?{approvedAt:-1,_id:-1}:{deliveryDate:1,routeSequence:1,createdAt:1}).skip((page-1)*50).limit(50);
  res.json({success:true,orders:await attachGuestContacts(orders),page});

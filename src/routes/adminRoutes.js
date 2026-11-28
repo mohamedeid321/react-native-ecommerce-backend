@@ -31,7 +31,7 @@ router.get("/dashboard",async(req,res)=>{
  const active={status:{$in:CURRENT_STATUSES}};
  const pendingApproval={status:"out_for_delivery",courierDeliveredAt:{$type:"date"}};
  const [groups,booked,approved,collected,overdue,unassigned,pending,customers,couriers,lowStock,unread,recentOrders]=await Promise.all([
- Order.aggregate([{$match:{deliveryDate:date}},{$group:{_id:"$status",count:{$sum:1},total:{$sum:"$total"}}}]),
+ Order.aggregate([{$match:{deliveryDate:date,archivedAt:null}},{$group:{_id:"$status",count:{$sum:1},total:{$sum:"$total"}}}]),
  Order.aggregate([{$match:{createdAt:instant,status:{$ne:"cancelled"}}},{$group:{_id:null,count:{$sum:1},total:{$sum:"$total"}}}]),
  Order.aggregate([{$match:{approvedAt:instant,status:"delivered"}},{$group:{_id:null,count:{$sum:1},total:{$sum:"$total"}}}]),
  Order.aggregate([{$match:{courierDeliveredAt:instant,collectedAmount:{$type:"number"}}},{$group:{_id:null,total:{$sum:"$collectedAmount"}}}]),
@@ -42,7 +42,7 @@ router.get("/dashboard",async(req,res)=>{
  User.countDocuments({role:"delivery",disabled:{$ne:true}}),
  Product.find({isActive:{$ne:false},stock:{$lte:5}}).select("name unit stock image").sort({stock:1}).limit(10).lean(),
  Notification.countDocuments({$or:[{audience:"admin"},{user:req.user._id}],readBy:{$ne:req.user._id}}),
- Order.find({deliveryDate:date}).select("orderNumber customer.username status total deliveryDate courier courierDeliveredAt").sort({createdAt:-1}).limit(10).lean()
+ Order.find({deliveryDate:date,archivedAt:null}).select("orderNumber customer.username status total deliveryDate courier courierDeliveredAt").sort({createdAt:-1}).limit(10).lean()
  ]);
  const byStatus=Object.fromEntries(ORDER_STATUSES.map(s=>[s,groups.find(g=>g._id===s)?.count??0]));
  res.json({success:true,date,byStatus,scheduledOrders:Object.values(byStatus).reduce((s,n)=>s+n,0),bookedOrders:booked[0]?.count??0,bookedSales:round2(booked[0]?.total??0),approvedDeliveries:approved[0]?.count??0,realizedRevenue:round2(approved[0]?.total??0),cashCollected:round2(collected[0]?.total??0),alerts:{overdue,unassigned,pendingApproval:pending,unreadNotifications:unread},customers,activeCouriers:couriers,lowStock,recentOrders});
@@ -68,8 +68,8 @@ router.get("/customers/:id",async(req,res)=>{
  if(!customer)return fail(res,404,"Customer not found");
  const {page,limit}=paging(req.query),filter={user:customer._id};
  const [orders,count,summary]=await Promise.all([
- Order.find(filter).select("orderNumber status subtotal deliveryFee total deliveryDate createdAt paymentStatus").sort({createdAt:-1,_id:-1}).skip((page-1)*limit).limit(limit).lean(),
- Order.countDocuments(filter),
+ Order.find({...filter,archivedAt:null}).select("orderNumber status subtotal deliveryFee total deliveryDate createdAt paymentStatus").sort({createdAt:-1,_id:-1}).skip((page-1)*limit).limit(limit).lean(),
+ Order.countDocuments({...filter,archivedAt:null}),
  Order.aggregate([{$match:{...filter,status:"delivered",approvedAt:{$type:"date"}}},{$group:{_id:null,count:{$sum:1},total:{$sum:"$total"}}}])
  ]);
  res.json({success:true,customer,orders,count,page,limit,approvedOrders:summary[0]?.count??0,realizedRevenue:round2(summary[0]?.total??0),phoneVerified:false});

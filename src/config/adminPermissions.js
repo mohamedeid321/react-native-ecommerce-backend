@@ -1,6 +1,6 @@
 export const adminJobs=['مدير التشغيل','مشرف الطلبات','خدمة العملاء','منسّق التوصيل','مدير المخزون','مسؤول المشتريات','مدير المنتجات','مسؤول التسويق','محاسب'];
 export const adminPermissions=[
- 'dashboard','orders.read','orders.update','orders.cancel','dispatch.read','dispatch.assign','dispatch.approve',
+ 'dashboard','orders.read','orders.update','orders.cancel','orders.delete','dispatch.read','dispatch.assign','dispatch.approve',
  'couriers.read','couriers.create','couriers.edit','couriers.delete','products.read','products.create','products.edit','products.delete',
  'stock.read','stock.edit','purchases.read','purchases.edit','finance.read','finance.edit','customers.read',
  'tracking.read','tracking.edit','offers.read','offers.edit','offers.delete','delivery.edit','settings.edit','notifications.read',
@@ -15,7 +15,8 @@ const rules=[
  ['GET',/^\/api\/admin\/customers(?:\/[^/]+)?$/,'customers.read'],
  ['GET',/^\/api\/admin\/guest-tracking-requests$/,'tracking.read','tracking.edit'],
  ['PATCH',/^\/api\/admin\/guest-tracking-requests\/[^/]+$/,'tracking.edit'],
- ['GET',/^\/api\/orders$/,'orders.read','orders.update','orders.cancel','dispatch.read','dispatch.assign','dispatch.approve'],
+ ['GET',/^\/api\/orders$/,'orders.read','orders.update','orders.cancel','orders.delete','dispatch.read','dispatch.assign','dispatch.approve'],
+ ['DELETE',/^\/api\/orders\/[^/]+$/,'orders.delete'],
  ['PATCH',/^\/api\/orders\/[^/]+\/assign$/,'dispatch.assign'],
  ['PATCH',/^\/api\/orders\/[^/]+\/approve-delivery$/,'dispatch.approve'],
  ['GET',/^\/api\/orders\/couriers$/,'couriers.read','couriers.create','couriers.edit','couriers.delete','dispatch.read','dispatch.assign','dispatch.approve'],

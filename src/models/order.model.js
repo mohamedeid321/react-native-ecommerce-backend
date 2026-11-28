@@ -24,6 +24,7 @@ const orderSchema = new mongoose.Schema(
       },
     ],
     courier: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    archivedAt: { type: Date, select: false },
     assignedAt: Date,
     routeSequence: { type: Number, min: 1, max: 10000 },
     courierDeliveredAt: Date,

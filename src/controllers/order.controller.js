@@ -249,8 +249,8 @@ export const getMyOrders = async (req, res) => {
 export const getOrderById = async (req, res) => {
   try {
     const { id } = req.params;
-    const order = isValidId(id) ? await Order.findById(id) : null;
-    const allowed = order && (hasAdminPermission(req.user,"orders.read","orders.update","orders.cancel","dispatch.read","dispatch.assign","dispatch.approve") || String(order.user) === String(req.user._id));
+    const order = isValidId(id) ? await Order.findById(id).select("+archivedAt") : null;
+    const allowed = order && ((!order.archivedAt && hasAdminPermission(req.user,"orders.read","orders.update","orders.cancel","orders.delete","dispatch.read","dispatch.assign","dispatch.approve")) || String(order.user) === String(req.user._id));
     if (!allowed) return fail(res, 404, "الطلب غير موجود");
     const [visibleOrder]=req.user.role==="admin"?await attachGuestContacts([order]):[order];
     res.json({ success: true, order:visibleOrder });
@@ -260,12 +260,13 @@ export const getOrderById = async (req, res) => {
 };
 
 // يغيّر الحالة بشكل ذرّي (لو الحالة اتغيرت في نفس اللحظة الطلب بيفشل بدل ما يحصل تعارض)
-const transition = async (order,status,cancelledBy="")=>{
+const transition = async (order,status,cancelledBy="",archive=false)=>{
+ const at=new Date();
  const session=await mongoose.startSession();
  let changed=false;
  try{
  await session.withTransaction(async()=>{
-  const result=await Order.updateOne({_id:order._id,status:order.status},{$set:{status,...(status==="cancelled"?{cancelledBy}:{})},$push:{statusHistory:{status,at:new Date()}}},{session});
+  const result=await Order.updateOne({_id:order._id,status:order.status,archivedAt:null},{$set:{status,...(status==="cancelled"?{cancelledBy}:{}),...(archive?{archivedAt:at}:{})},$push:{statusHistory:{status,at}}},{session});
   changed=Boolean(result.modifiedCount);
   if(changed&&status==="cancelled")for(const item of order.items)if(item.product)await Product.updateOne({_id:item.product},{$inc:{stock:item.quantity}},{session});
  });
@@ -307,7 +308,7 @@ export const getAllOrders = async (req, res) => {
     const {scope,status,date,overdue,courierId}=req.query;
     if(scope!==undefined&&!["current","finished","all"].includes(scope))return fail(res,400,"Invalid scope");
     const statuses=scope==="finished"?FINISHED_STATUSES:scope==="all"?ORDER_STATUSES:CURRENT_STATUSES;
-    const filter={status:{$in:statuses}};
+    const filter={archivedAt:null,status:{$in:statuses}};
     if(status!==undefined){if(!ORDER_STATUSES.includes(status))return fail(res,400,"Invalid status");filter.status=status;}
     if(date!==undefined){if(typeof date!=="string"||!/^\d{4}-\d{2}-\d{2}$/.test(date))return fail(res,400,"Invalid date");filter.deliveryDate=date;}
     if(courierId!==undefined){if(typeof courierId!=="string"||!isValidId(courierId))return fail(res,400,"Invalid courier");filter.courier=courierId;}
@@ -316,11 +317,15 @@ export const getAllOrders = async (req, res) => {
 
     const [orders, currentCount, finishedCount] = await Promise.all([
       Order.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit),
-      Order.countDocuments({ status: { $in: CURRENT_STATUSES } }),
-      Order.countDocuments({ status: { $in: FINISHED_STATUSES } }),
+      Order.countDocuments({ archivedAt:null, status: { $in: CURRENT_STATUSES } }),
+      Order.countDocuments({ archivedAt:null, status: { $in: FINISHED_STATUSES } }),
     ]);
 
-    res.json({ success: true, orders, currentCount, finishedCount });
+    const courierIds=[...new Set(orders.filter(order=>order.courier).map(order=>String(order.courier)))];
+    const couriers=courierIds.length?await User.find({_id:{$in:courierIds}}).select("username displayName").lean():[];
+    const names=new Map(couriers.map(courier=>[String(courier._id),courier.displayName||courier.username]));
+    const rows=orders.map(order=>({...order.toJSON(),courierName:names.get(String(order.courier))}));
+    res.json({ success: true, orders:rows, currentCount, finishedCount });
   } catch (error) {
     serverError(res, error, "getAllOrders");
   }
@@ -329,10 +334,11 @@ export const getAllOrders = async (req, res) => {
 export const updateOrderStatus = async (req, res) => {
   try {
     const { id } = req.params;
-    const next = req.body.status;
-    const order = isValidId(id) ? await Order.findById(id) : null;
+    const {status:next,expectedStatus}=req.body??{};
+    const order = isValidId(id) ? await Order.findOne({_id:id,archivedAt:null}) : null;
     if (!order) return fail(res, 404, "الطلب غير موجود");
 
+    if (expectedStatus!==undefined&&expectedStatus!==order.status) return fail(res,409,"حالة الطلب اتغيرت، حدّث الصفحة");
     if (!(ADMIN_TRANSITIONS[order.status] || []).includes(next)) {
       return fail(res, 400, "لا يمكن تغيير حالة الطلب إلى هذه الحالة");
     }
@@ -353,3 +359,24 @@ export const updateOrderStatus = async (req, res) => {
   }
 };
 
+
+export async function archiveOrder(req,res){
+ try{
+  const {id}=req.params;
+  const order=isValidId(id)?await Order.findOne({_id:id,archivedAt:null}):null;
+  if(!order)return fail(res,404,"الطلب غير موجود");
+  if(order.status==='out_for_delivery')return fail(res,409,"الطلب خرج للتوصيل. اعتمد التسليم قبل الحذف.");
+  if(req.body?.expectedStatus!==undefined&&req.body.expectedStatus!==order.status)
+   return fail(res,409,"حالة الطلب اتغيرت، حدّث الصفحة");
+
+  const cancel=CUSTOMER_CANCELLABLE.includes(order.status);
+  const changed=cancel
+   ?await transition(order,"cancelled","admin",true)
+   :(await Order.updateOne({_id:id,status:order.status,archivedAt:null},{$set:{archivedAt:new Date()}})).modifiedCount;
+  if(!changed)return fail(res,409,"حالة الطلب اتغيرت، حدّث الصفحة");
+  if(cancel&&order.user)await notifyUser(order.user,{
+   title:"تم إلغاء الطلب",body:`تم إلغاء طلبك #${order.orderNumber}`,orderId:order._id,
+  }).catch(()=>{});
+  return res.json({success:true,message:"تم حذف الطلب من قائمة الأدمن"});
+ }catch(error){serverError(res,error,"archiveOrder");}
+}
